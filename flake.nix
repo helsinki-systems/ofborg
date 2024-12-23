@@ -1,6 +1,6 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-22.11";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
   };
 
   outputs =
@@ -75,7 +75,7 @@
             src = pkgs.nix-gitignore.gitignoreSource [ ] ./.;
 
             nativeBuildInputs = with pkgs; [
-              pkgconfig
+              pkg-config
               pkgs.rustPackages.clippy
             ];
 

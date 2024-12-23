@@ -885,7 +885,7 @@ mod tests {
             ret,
             Expect::Fail,
             vec![
-                "access to absolute path '/fake'",
+                "access to URI 'git+file:///fake",
                 "is forbidden in restricted mode",
             ],
         );
