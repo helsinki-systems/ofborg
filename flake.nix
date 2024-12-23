@@ -122,6 +122,7 @@
             test -e $out/bin/builder
             test -e $out/bin/github_comment_filter
             test -e $out/bin/github_comment_poster
+            test -e $out/bin/github_webhook_receiver
             test -e $out/bin/log_message_collector
             test -e $out/bin/evaluation_filter
           '';

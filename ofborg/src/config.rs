@@ -14,6 +14,8 @@ use tracing::{debug, error, info, warn};
 
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
+    /// Configuration for the webhook receiver
+    pub github_webhook_receiver: Option<GithubWebhookConfig>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -22,6 +24,18 @@ pub struct Config {
     pub github: Option<GithubConfig>,
     pub github_app: Option<GithubAppConfig>,
     pub log_storage: Option<LogStorage>,
+}
+
+/// Configuration for the webhook receiver
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct GithubWebhookConfig {
+    /// Listen host/port
+    pub listen: String,
+    /// Path to the GitHub webhook secret
+    pub webhook_secret_file: String,
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
