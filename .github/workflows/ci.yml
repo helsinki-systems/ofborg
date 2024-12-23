@@ -30,4 +30,4 @@ jobs:
         with:
           nix_path: nixpkgs=channel:nixos-unstable
       - name: nix-build
-        run: nix-build -A ofborg.rs -A ofborg.php
+        run: nix-build -A ofborg.rs

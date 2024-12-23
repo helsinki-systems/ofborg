@@ -1,7 +1,5 @@
-config.php
 vendor
 *.log
-test.php
 config.json
 .bash_hist
 config.private.json

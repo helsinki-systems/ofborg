@@ -1,13 +1,11 @@
 {
   inputs = {
     nixpkgs.url = "github:nixos/nixpkgs/nixos-22.11";
-    nixpkgs-for-php.url = "github:nixos/nixpkgs/nixos-22.05";
   };
 
   outputs =
     { self
     , nixpkgs
-    , nixpkgs-for-php
     , ...
     }@inputs:
     let
@@ -21,21 +19,6 @@
           let
             pkgs = import nixpkgs {
               inherit system;
-            };
-            phpPkgs = import nixpkgs-for-php {
-              inherit system;
-            };
-
-            phpEnv = pkgs.mkShell {
-              name = "gh-event-forwarder";
-              buildInputs = with pkgs; [
-                nix-prefetch-git
-                phpPkgs.php
-                phpPkgs.phpPackages.composer
-                git
-                curl
-                bash
-              ];
             };
           in
           {
@@ -78,17 +61,12 @@
               RUST_BACKTRACE = "1";
               RUST_LOG = "ofborg=debug";
               NIX_PATH = "nixpkgs=${pkgs.path}";
-              passthru.phpEnv = phpEnv;
             };
           });
 
       packages = forAllSystems (system:
         let
           pkgs = import nixpkgs {
-            inherit system;
-          };
-
-          phpPkgs = import nixpkgs-for-php {
             inherit system;
           };
 
@@ -147,13 +125,10 @@
             test -e $out/bin/log_message_collector
             test -e $out/bin/evaluation_filter
           '';
-
-          ofborg.php = import ./php { pkgs = phpPkgs; };
         });
 
       hydraJobs = {
         buildRs = forAllSystems (system: self.packages.${system}.ofborg.rs);
-        buildPhp = self.packages.x86_64-linux.ofborg.php;
       };
     };
 }
