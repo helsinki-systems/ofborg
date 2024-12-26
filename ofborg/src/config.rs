@@ -26,7 +26,6 @@ pub struct Config {
     pub checkout: CheckoutConfig,
     pub nix: NixConfig,
     pub rabbitmq: RabbitMqConfig,
-    pub github: Option<GithubConfig>,
     pub github_app: Option<GithubAppConfig>,
     pub log_storage: Option<LogStorage>,
 }
@@ -89,14 +88,11 @@ pub struct NixConfig {
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct GithubConfig {
-    pub token_file: PathBuf,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct GithubAppConfig {
     pub app_id: u64,
     pub private_key: PathBuf,
+    pub oauth_client_id: String,
+    pub oauth_client_secret_file: PathBuf,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -162,12 +158,12 @@ impl Config {
     }
 
     pub fn github(&self) -> Github {
-        let token = std::fs::read_to_string(self.github.clone().unwrap().token_file)
-            .expect("Couldn't read from GitHub token file");
+        let token = std::fs::read_to_string(self.github_app.clone().expect("No GitHub app configured").oauth_client_secret_file)
+            .expect("Couldn't read from GitHub app token");
+        let token = token.trim();
         Github::new(
-            "github.com/grahamc/ofborg",
-            // tls configured hyper client
-            Credentials::Token(token),
+            "github.com/ofborg/ofborg",
+            Credentials::Client(self.github_app.clone().expect("No GitHub app configured").oauth_client_id, token.to_owned()),
         )
         .expect("Unable to create a github client instance")
     }
