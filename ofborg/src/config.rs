@@ -19,6 +19,8 @@ pub struct Config {
     pub github_webhook_receiver: Option<GithubWebhookConfig>,
     /// Configuration for the evaluation filter
     pub evaluation_filter: Option<EvaluationFilter>,
+    /// Configuration for the GitHub comment filter
+    pub github_comment_filter: Option<GithubCommentFilter>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -45,6 +47,14 @@ pub struct GithubWebhookConfig {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct EvaluationFilter {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the GitHub comment filter
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct GithubCommentFilter {
     /// RabbitMQ broker to connect to
     pub rabbitmq: RabbitMqConfig,
 }
