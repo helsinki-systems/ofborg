@@ -80,7 +80,7 @@ fn setup_amqp(chan: &mut Channel) -> Result<(), Box<dyn Error>> {
     chan.bind_queue(easyamqp::BindQueueConfig {
         queue: queue_name.clone(),
         exchange: "github-events".to_owned(),
-        routing_key: Some(String::from("pull_request.nixos/nixpkgs")),
+        routing_key: Some(String::from("pull_request.*")),
         no_wait: false,
     })?;
     Ok(())

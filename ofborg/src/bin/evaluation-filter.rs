@@ -52,7 +52,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     chan.bind_queue(easyamqp::BindQueueConfig {
         queue: queue_name.clone(),
         exchange: "github-events".to_owned(),
-        routing_key: Some("pull_request.nixos/nixpkgs".to_owned()),
+        routing_key: Some("pull_request.nixos/*".to_owned()),
         no_wait: false,
     })?;
 
