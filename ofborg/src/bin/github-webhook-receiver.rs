@@ -7,7 +7,8 @@ extern crate hyper;
 
 use async_std::task;
 use hmac::{Hmac, Mac};
-use hyper::header;
+use hyper::header::ContentType;
+use hyper::mime;
 use hyper::{
     server::{Request, Response, Server},
     status::StatusCode,
@@ -171,11 +172,30 @@ fn main() -> Result<(), Box<dyn Error>> {
             }
 
             // Parse body
-            let Ok(input) = serde_json::from_slice::<GenericWebhook>(raw) else {
+            let Some(ct) = hdr.get::<ContentType>() else {
                 *res.status_mut() = StatusCode::BadRequest;
-                let _ = res.send(b"Invalid JSON");
-                error!("Invalid JSON received");
+                let _ = res.send(b"No Content-Type header passed");
                 return;
+            };
+            if ct
+                != &ContentType(mime::Mime(
+                    mime::TopLevel::Application,
+                    mime::SubLevel::Json,
+                    Vec::new(),
+                ))
+            {
+                *res.status_mut() = StatusCode::BadRequest;
+                let _ = res.send(b"Content-Type is not application/json. Webhook misconfigured?");
+                return;
+            }
+            let input = match serde_json::from_slice::<GenericWebhook>(raw) {
+                Ok(i) => i,
+                Err(e) => {
+                    *res.status_mut() = StatusCode::BadRequest;
+                    let _ = res.send(b"Invalid JSON");
+                    error!("Invalid JSON received: {e}");
+                    return;
+                }
             };
 
             // Build routing key
