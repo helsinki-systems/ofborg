@@ -63,6 +63,16 @@ fn main() -> Result<(), Box<dyn Error>> {
         no_wait: false,
     })?;
 
+    chan.declare_exchange(easyamqp::ExchangeConfig {
+        exchange: "build-results".to_owned(),
+        exchange_type: easyamqp::ExchangeType::Fanout,
+        passive: false,
+        durable: true,
+        auto_delete: false,
+        no_wait: false,
+        internal: false,
+    })?;
+
     // Create build job queues
     for sys in System::all_known_systems().iter().map(System::to_string) {
         chan.declare_queue(easyamqp::QueueConfig {
