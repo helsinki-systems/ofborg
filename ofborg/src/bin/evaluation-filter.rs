@@ -2,7 +2,7 @@ use std::env;
 use std::error::Error;
 
 use async_std::task;
-use tracing::info;
+use tracing::{error, info};
 
 use ofborg::config;
 use ofborg::easyamqp::{self, ChannelExt, ConsumerExt};
@@ -14,10 +14,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let arg = env::args()
         .nth(1)
-        .expect("usage: evaluation-filter <config>");
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let Some(filter_cfg) = config::load(arg.as_ref()).evaluation_filter else {
+        error!("No evaluation filter configuration found!");
+        panic!();
+    };
+
+    let conn = easylapin::from_config(&filter_cfg.rabbitmq)?;
     let mut chan = task::block_on(conn.create_channel())?;
 
     chan.declare_exchange(easyamqp::ExchangeConfig {

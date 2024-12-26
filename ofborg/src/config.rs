@@ -12,10 +12,13 @@ use hubcaps::{Credentials, Github, InstallationTokenGenerator, JWTCredentials};
 use serde::de::{self, Deserialize, Deserializer};
 use tracing::{debug, error, info, warn};
 
+/// Main ofBorg configuration
 #[derive(Serialize, Deserialize, Debug)]
 pub struct Config {
     /// Configuration for the webhook receiver
     pub github_webhook_receiver: Option<GithubWebhookConfig>,
+    /// Configuration for the evaluation filter
+    pub evaluation_filter: Option<EvaluationFilter>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -38,17 +41,31 @@ pub struct GithubWebhookConfig {
     pub rabbitmq: RabbitMqConfig,
 }
 
+/// Configuration for the evaluation filter
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct EvaluationFilter {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FeedbackConfig {
     pub full_logs: bool,
 }
 
+/// Configures the connection to a RabbitMQ instance
 #[derive(Serialize, Deserialize, Debug, Clone)]
 pub struct RabbitMqConfig {
+    /// Whether or not to use SSL
     pub ssl: bool,
+    /// Hostname to conenct to
     pub host: String,
+    /// Virtual host to use (defaults to /)
     pub virtualhost: Option<String>,
+    /// Username to connect with
     pub username: String,
+    /// File to read the user password from. Contents are automatically stripped
     pub password_file: PathBuf,
 }
 
@@ -86,9 +103,12 @@ pub struct RunnerConfig {
     #[serde(default = "default_instance")]
     pub instance: u8,
     pub identity: String,
+    /// List of GitHub repos we feel responsible for
     pub repos: Option<Vec<String>>,
+    /// Whether to use the `trusted_users` field or just allow everyone
     #[serde(default = "Default::default")]
     pub disable_trusted_users: bool,
+    /// List of users who are allowed to build on less sandboxed platforms
     pub trusted_users: Option<Vec<String>>,
 
     /// If true, will create its own queue attached to the build job
