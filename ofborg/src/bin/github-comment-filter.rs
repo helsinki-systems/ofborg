@@ -2,6 +2,7 @@ use std::env;
 use std::error::Error;
 
 use async_std::task;
+use ofborg::systems::System;
 use tracing::{error, info};
 
 use ofborg::config;
@@ -61,6 +62,18 @@ fn main() -> Result<(), Box<dyn Error>> {
         routing_key: Some("issue_comment.*".to_owned()),
         no_wait: false,
     })?;
+
+    // Create build job queues
+    for sys in System::all_known_systems().iter().map(System::to_string) {
+        chan.declare_queue(easyamqp::QueueConfig {
+            queue: format!("build-inputs-{sys}"),
+            passive: false,
+            durable: true,
+            exclusive: false,
+            auto_delete: false,
+            no_wait: false,
+        })?;
+    }
 
     let handle = easylapin::WorkerChannel(chan).consume(
         tasks::githubcommentfilter::GitHubCommentWorker::new(cfg.acl(), cfg.github()),

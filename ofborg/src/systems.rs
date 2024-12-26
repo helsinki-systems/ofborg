@@ -6,6 +6,17 @@ pub enum System {
     Aarch64Darwin,
 }
 
+impl System {
+    pub fn all_known_systems() -> [Self; 4] {
+        [
+            Self::X8664Linux,
+            Self::Aarch64Linux,
+            Self::X8664Darwin,
+            Self::Aarch64Darwin,
+        ]
+    }
+}
+
 impl std::fmt::Display for System {
     fn fmt(&self, f: &mut std::fmt::Formatter) -> std::fmt::Result {
         match self {
