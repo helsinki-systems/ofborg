@@ -78,6 +78,7 @@ pub enum CommitStatusError {
     ExpiredCreds(hubcaps::Error),
     MissingSha(hubcaps::Error),
     Error(hubcaps::Error),
+    InternalError(String),
 }
 
 impl From<hubcaps::Error> for CommitStatusError {

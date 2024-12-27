@@ -227,6 +227,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                 error!("Failed writing commit status: creds expired: {:?}", e);
                 self.actions().retry_later(self.job)
             }
+            Err(Err(CommitStatusError::InternalError(e))) => {
+                error!("Failed writing commit status: internal error: {:?}", e);
+                self.actions().retry_later(self.job)
+            }
             Err(Err(CommitStatusError::MissingSha(e))) => {
                 error!(
                     "Failed writing commit status: commit sha was force-pushed away: {:?}",
@@ -327,7 +331,9 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         info!("Working on {}", job.pr.number);
         let co = project
             .clone_for("mr-est".to_string(), self.identity.to_string())
-            .unwrap();
+            .map_err(|e| {
+                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Cloning failed: {e}")))
+            })?;
 
         let target_branch = match job.pr.target_branch.clone() {
             Some(x) => x,
@@ -350,7 +356,9 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             hubcaps::statuses::State::Pending,
         )?;
         info!("Checking out target branch {}", &target_branch);
-        let refpath = co.checkout_origin_ref(target_branch.as_ref()).unwrap();
+        let refpath = co.checkout_origin_ref(target_branch.as_ref()).map_err(|e| {
+            EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Checking out target branch failed: {e}")))
+        })?;
 
         evaluation_strategy.on_target_branch(Path::new(&refpath), &mut overall_status)?;
 
@@ -365,7 +373,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
 
         overall_status.set_with_description("Fetching PR", hubcaps::statuses::State::Pending)?;
 
-        co.fetch_pr(job.pr.number).unwrap();
+        co.fetch_pr(job.pr.number)
+            .map_err(|e| {
+                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Fetching PR failed: {e}")))
+            })?;
 
         if !co.commit_exists(job.pr.head_sha.as_ref()) {
             overall_status
