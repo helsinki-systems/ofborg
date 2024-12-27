@@ -21,6 +21,8 @@ pub struct Config {
     pub evaluation_filter: Option<EvaluationFilter>,
     /// Configuration for the GitHub comment filter
     pub github_comment_filter: Option<GithubCommentFilter>,
+    /// Configuration for the GitHub comment poster
+    pub github_comment_poster: Option<GithubCommentPoster>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -54,6 +56,14 @@ pub struct EvaluationFilter {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GithubCommentFilter {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the GitHub comment poster
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct GithubCommentPoster {
     /// RabbitMQ broker to connect to
     pub rabbitmq: RabbitMqConfig,
 }

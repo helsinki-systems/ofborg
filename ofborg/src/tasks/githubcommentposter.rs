@@ -6,7 +6,7 @@ use crate::worker;
 
 use chrono::{DateTime, Utc};
 use hubcaps::checks::{CheckRunOptions, CheckRunState, Conclusion, Output};
-use tracing::{debug, debug_span, info};
+use tracing::{debug, debug_span, info, warn};
 
 pub struct GitHubCommentPoster {
     github_vend: GithubAppVendingMachine,
@@ -89,7 +89,7 @@ impl worker::SimpleWorker for GitHubCommentPoster {
 
             match check_create_attempt {
                 Ok(_) => info!("Successfully sent."),
-                Err(err) => info!("Failed to send check {:?}", err),
+                Err(err) => warn!("Failed to send check {:?}", err),
             }
         }
 
