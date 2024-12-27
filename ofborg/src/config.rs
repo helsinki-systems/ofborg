@@ -21,6 +21,8 @@ pub struct Config {
     pub evaluation_filter: Option<EvaluationFilter>,
     /// Configuration for the GitHub comment filter
     pub github_comment_filter: Option<GithubCommentFilter>,
+    /// Configuration for the GitHub comment poster
+    pub github_comment_poster: Option<GithubCommentPoster>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -54,6 +56,14 @@ pub struct EvaluationFilter {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GithubCommentFilter {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the GitHub comment poster
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct GithubCommentPoster {
     /// RabbitMQ broker to connect to
     pub rabbitmq: RabbitMqConfig,
 }
@@ -162,7 +172,7 @@ impl Config {
             .expect("Couldn't read from GitHub app token");
         let token = token.trim();
         Github::new(
-            "github.com/ofborg/ofborg",
+            "github.com/NixOS/ofborg",
             Credentials::Client(self.github_app.clone().expect("No GitHub app configured").oauth_client_id, token.to_owned()),
         )
         .expect("Unable to create a github client instance")
@@ -228,7 +238,7 @@ pub struct GithubAppVendingMachine {
 
 impl GithubAppVendingMachine {
     fn useragent(&self) -> &'static str {
-        "github.com/grahamc/ofborg (app)"
+        "github.com/NixOS/ofborg (app)"
     }
 
     fn jwt(&self) -> JWTCredentials {
