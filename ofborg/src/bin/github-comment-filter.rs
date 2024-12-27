@@ -2,7 +2,8 @@ use std::env;
 use std::error::Error;
 
 use async_std::task;
-use tracing::info;
+use ofborg::systems::System;
+use tracing::{error, info};
 
 use ofborg::config;
 use ofborg::easyamqp::{self, ChannelExt, ConsumerExt};
@@ -14,10 +15,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let arg = env::args()
         .nth(1)
-        .expect("usage: github-comment-filter <config>");
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let Some(filter_cfg) = config::load(arg.as_ref()).github_comment_filter else {
+        error!("No comment filter configuration found!");
+        panic!();
+    };
+
+    let conn = easylapin::from_config(&filter_cfg.rabbitmq)?;
     let mut chan = task::block_on(conn.create_channel())?;
 
     chan.declare_exchange(easyamqp::ExchangeConfig {
@@ -56,6 +62,28 @@ fn main() -> Result<(), Box<dyn Error>> {
         routing_key: Some("issue_comment.*".to_owned()),
         no_wait: false,
     })?;
+
+    chan.declare_exchange(easyamqp::ExchangeConfig {
+        exchange: "build-results".to_owned(),
+        exchange_type: easyamqp::ExchangeType::Fanout,
+        passive: false,
+        durable: true,
+        auto_delete: false,
+        no_wait: false,
+        internal: false,
+    })?;
+
+    // Create build job queues
+    for sys in System::all_known_systems().iter().map(System::to_string) {
+        chan.declare_queue(easyamqp::QueueConfig {
+            queue: format!("build-inputs-{sys}"),
+            passive: false,
+            durable: true,
+            exclusive: false,
+            auto_delete: false,
+            no_wait: false,
+        })?;
+    }
 
     let handle = easylapin::WorkerChannel(chan).consume(
         tasks::githubcommentfilter::GitHubCommentWorker::new(cfg.acl(), cfg.github()),

@@ -1,13 +1,11 @@
 {
   inputs = {
-    nixpkgs.url = "github:nixos/nixpkgs/nixos-22.11";
-    nixpkgs-for-php.url = "github:nixos/nixpkgs/nixos-22.05";
+    nixpkgs.url = "github:nixos/nixpkgs/nixos-24.11";
   };
 
   outputs =
     { self
     , nixpkgs
-    , nixpkgs-for-php
     , ...
     }@inputs:
     let
@@ -21,21 +19,6 @@
           let
             pkgs = import nixpkgs {
               inherit system;
-            };
-            phpPkgs = import nixpkgs-for-php {
-              inherit system;
-            };
-
-            phpEnv = pkgs.mkShell {
-              name = "gh-event-forwarder";
-              buildInputs = with pkgs; [
-                nix-prefetch-git
-                phpPkgs.php
-                phpPkgs.phpPackages.composer
-                git
-                curl
-                bash
-              ];
             };
           in
           {
@@ -78,7 +61,6 @@
               RUST_BACKTRACE = "1";
               RUST_LOG = "ofborg=debug";
               NIX_PATH = "nixpkgs=${pkgs.path}";
-              passthru.phpEnv = phpEnv;
             };
           });
 
@@ -88,16 +70,12 @@
             inherit system;
           };
 
-          phpPkgs = import nixpkgs-for-php {
-            inherit system;
-          };
-
           pkg = pkgs.rustPlatform.buildRustPackage {
             name = "ofborg";
             src = pkgs.nix-gitignore.gitignoreSource [ ] ./.;
 
             nativeBuildInputs = with pkgs; [
-              pkgconfig
+              pkg-config
               pkgs.rustPackages.clippy
             ];
 
@@ -144,16 +122,14 @@
             test -e $out/bin/builder
             test -e $out/bin/github_comment_filter
             test -e $out/bin/github_comment_poster
+            test -e $out/bin/github_webhook_receiver
             test -e $out/bin/log_message_collector
             test -e $out/bin/evaluation_filter
           '';
-
-          ofborg.php = import ./php { pkgs = phpPkgs; };
         });
 
       hydraJobs = {
         buildRs = forAllSystems (system: self.packages.${system}.ofborg.rs);
-        buildPhp = self.packages.x86_64-linux.ofborg.php;
       };
     };
 }

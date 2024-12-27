@@ -21,3 +21,11 @@ pub struct Repository {
 pub struct Issue {
     pub number: u64,
 }
+
+/// A generic webhook that we received with minimal verification, only for handling in the GitHub
+/// webhook receiver.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct GenericWebhook {
+    /// The repository the event originated
+    pub repository: Repository,
+}
