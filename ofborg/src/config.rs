@@ -172,7 +172,7 @@ impl Config {
             .expect("Couldn't read from GitHub app token");
         let token = token.trim();
         Github::new(
-            "github.com/ofborg/ofborg",
+            "github.com/NixOS/ofborg",
             Credentials::Client(self.github_app.clone().expect("No GitHub app configured").oauth_client_id, token.to_owned()),
         )
         .expect("Unable to create a github client instance")
@@ -238,7 +238,7 @@ pub struct GithubAppVendingMachine {
 
 impl GithubAppVendingMachine {
     fn useragent(&self) -> &'static str {
-        "github.com/grahamc/ofborg (app)"
+        "github.com/NixOS/ofborg (app)"
     }
 
     fn jwt(&self) -> JWTCredentials {
