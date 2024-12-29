@@ -214,10 +214,18 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         });
 
         match eval_result {
-            Ok(eval_actions) => eval_actions,
+            Ok(eval_actions) => {
+                let issue_ref = self.repo.issue(self.job.pr.number);
+                update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]);
+
+                eval_actions
+            }
             Err(Ok(())) => {
                 // There was an error during eval, but we successfully
                 // updated the PR.
+
+                let issue_ref = self.repo.issue(self.job.pr.number);
+                update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]);
 
                 self.actions().skip(self.job)
             }
