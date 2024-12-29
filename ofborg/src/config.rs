@@ -25,6 +25,8 @@ pub struct Config {
     pub github_comment_filter: Option<GithubCommentFilter>,
     /// Configuration for the GitHub comment poster
     pub github_comment_poster: Option<GithubCommentPoster>,
+    /// Configuration for the mass rebuilder
+    pub mass_rebuilder: Option<MassRebuilder>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
@@ -86,6 +88,14 @@ pub struct GithubCommentFilter {
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
 pub struct GithubCommentPoster {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the mass rebuilder
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct MassRebuilder {
     /// RabbitMQ broker to connect to
     pub rabbitmq: RabbitMqConfig,
 }
