@@ -168,12 +168,23 @@ impl Config {
     }
 
     pub fn github(&self) -> Github {
-        let token = std::fs::read_to_string(self.github_app.clone().expect("No GitHub app configured").oauth_client_secret_file)
-            .expect("Couldn't read from GitHub app token");
+        let token = std::fs::read_to_string(
+            self.github_app
+                .clone()
+                .expect("No GitHub app configured")
+                .oauth_client_secret_file,
+        )
+        .expect("Couldn't read from GitHub app token");
         let token = token.trim();
         Github::new(
             "github.com/NixOS/ofborg",
-            Credentials::Client(self.github_app.clone().expect("No GitHub app configured").oauth_client_id, token.to_owned()),
+            Credentials::Client(
+                self.github_app
+                    .clone()
+                    .expect("No GitHub app configured")
+                    .oauth_client_id,
+                token.to_owned(),
+            ),
         )
         .expect("Unable to create a github client instance")
     }
