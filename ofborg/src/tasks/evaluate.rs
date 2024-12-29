@@ -291,19 +291,15 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             }
         };
 
-        let mut evaluation_strategy: Box<dyn eval::EvaluationStrategy> = if job.is_nixpkgs() {
-            Box::new(eval::NixpkgsStrategy::new(
-                job,
-                &pull,
-                &issue,
-                &issue_ref,
-                &repo,
-                &self.gists,
-                self.nix.clone(),
-            ))
-        } else {
-            Box::new(eval::GenericStrategy::new())
-        };
+        let mut evaluation_strategy = eval::NixpkgsStrategy::new(
+            job,
+            &pull,
+            &issue,
+            &issue_ref,
+            &repo,
+            &self.gists,
+            self.nix.clone(),
+        );
 
         let prefix = get_prefix(repo.statuses(), &job.pr.head_sha)?;
 
