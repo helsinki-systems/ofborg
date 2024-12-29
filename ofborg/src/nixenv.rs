@@ -24,7 +24,6 @@ impl HydraNixEnv {
 
     pub fn execute(&self) -> Result<outpathdiff::PackageOutPaths, Error> {
         let (status, stdout, stderr) = self.run_nix_env();
-        println!("{status:#?}, {stdout:#?}");
 
         if status {
             let outpaths = outpathdiff::parse_json(
