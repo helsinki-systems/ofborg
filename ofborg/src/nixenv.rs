@@ -23,7 +23,7 @@ impl HydraNixEnv {
     }
 
     pub fn execute(&self) -> Result<outpathdiff::PackageOutPaths, Error> {
-        let (status, stdout, stderr) = self.run_nix_env();
+        let (status, _stdout, stderr) = self.run_nix_env();
 
         if status {
             let outpaths = outpathdiff::parse_json(
@@ -66,16 +66,16 @@ impl HydraNixEnv {
                 "--max-jobs",
                 "1",
                 "--cores",
-                "4",
+                &self.nix.list_cores.to_string(),
                 "--arg",
                 "nixpkgs",
                 self.path.to_str().unwrap(),
                 "--arg",
                 "chunkSize",
-                "10000",
+                &self.nix.list_chunk_size.to_string(),
                 "--arg",
                 "evalSystems",
-                "[\"x86_64-linux\"]",
+                &format!("[\"{}\"]", self.nix.list_system),
                 "--arg",
                 "checkMeta",
                 check_meta,

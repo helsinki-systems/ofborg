@@ -128,6 +128,9 @@ pub struct Nix {
     build_timeout: u16,
     limit_supported_systems: bool,
     initial_heap_size: Option<String>,
+    pub list_cores: u64,
+    pub list_chunk_size: u64,
+    pub list_system: String,
 }
 
 impl Nix {
@@ -136,6 +139,9 @@ impl Nix {
         remote: String,
         build_timeout: u16,
         initial_heap_size: Option<String>,
+        list_cores: u64,
+        list_chunk_size: u64,
+        list_system: String,
     ) -> Nix {
         Nix {
             system,
@@ -143,6 +149,9 @@ impl Nix {
             build_timeout,
             initial_heap_size,
             limit_supported_systems: true,
+            list_cores,
+            list_chunk_size,
+            list_system,
         }
     }
 

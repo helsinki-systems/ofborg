@@ -9,6 +9,7 @@ use crate::nix;
 use crate::stats::{self, Event};
 use crate::systems;
 use crate::tasks::eval;
+use crate::tasks::eval::EvaluationStrategy;
 use crate::worker;
 use futures_util::TryFutureExt;
 

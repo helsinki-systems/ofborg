@@ -1,7 +1,5 @@
-mod generic;
 mod nixpkgs;
 
-pub use self::generic::GenericStrategy;
 pub use self::nixpkgs::NixpkgsStrategy;
 use crate::checkout::CachedProjectCo;
 use crate::commitstatus::{CommitStatus, CommitStatusError};

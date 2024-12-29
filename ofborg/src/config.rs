@@ -127,6 +127,12 @@ pub struct NixConfig {
     pub remote: String,
     pub build_timeout_seconds: u16,
     pub initial_heap_size: Option<String>,
+    /// CPU cores for package listing
+    pub list_cores: Option<u64>,
+    /// Chunk size for package listing
+    pub list_chunk_size: Option<u64>,
+    /// System to evaluate when calculating package diff
+    pub list_system: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -244,6 +250,12 @@ impl Config {
             self.nix.remote.clone(),
             self.nix.build_timeout_seconds,
             self.nix.initial_heap_size.clone(),
+            self.nix.list_cores.unwrap_or(4),
+            self.nix.list_chunk_size.unwrap_or(10000),
+            self.nix
+                .list_system
+                .clone()
+                .unwrap_or(String::from("x86_64-linux")),
         )
     }
 }
