@@ -1,10 +1,8 @@
 mod generic;
 mod nixpkgs;
-pub mod stdenvs;
 
 pub use self::generic::GenericStrategy;
 pub use self::nixpkgs::NixpkgsStrategy;
-pub use self::stdenvs::Stdenvs;
 use crate::checkout::CachedProjectCo;
 use crate::commitstatus::{CommitStatus, CommitStatusError};
 use crate::evalchecker::EvalChecker;
