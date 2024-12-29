@@ -12,15 +12,13 @@ use crate::tasks::eval;
 use crate::worker;
 use futures_util::TryFutureExt;
 
-use std::collections::HashMap;
 use std::path::Path;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use hubcaps::checks::CheckRunOptions;
 use hubcaps::gists::Gists;
 use hubcaps::issues::Issue;
-use tracing::{debug, debug_span, error, info, warn};
+use tracing::{debug_span, error, info, warn};
 
 pub struct EvaluationWorker<E> {
     cloner: checkout::CachedCloner,
@@ -332,7 +330,9 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         let co = project
             .clone_for("mr-est".to_string(), self.identity.to_string())
             .map_err(|e| {
-                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Cloning failed: {e}")))
+                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!(
+                    "Cloning failed: {e}"
+                )))
             })?;
 
         let target_branch = match job.pr.target_branch.clone() {
@@ -356,9 +356,13 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             hubcaps::statuses::State::Pending,
         )?;
         info!("Checking out target branch {}", &target_branch);
-        let refpath = co.checkout_origin_ref(target_branch.as_ref()).map_err(|e| {
-            EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Checking out target branch failed: {e}")))
-        })?;
+        let refpath = co
+            .checkout_origin_ref(target_branch.as_ref())
+            .map_err(|e| {
+                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!(
+                    "Checking out target branch failed: {e}"
+                )))
+            })?;
 
         evaluation_strategy.on_target_branch(Path::new(&refpath), &mut overall_status)?;
 
@@ -373,10 +377,11 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
 
         overall_status.set_with_description("Fetching PR", hubcaps::statuses::State::Pending)?;
 
-        co.fetch_pr(job.pr.number)
-            .map_err(|e| {
-                EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!("Fetching PR failed: {e}")))
-            })?;
+        co.fetch_pr(job.pr.number).map_err(|e| {
+            EvalWorkerError::CommitStatusWrite(CommitStatusError::InternalError(format!(
+                "Fetching PR failed: {e}"
+            )))
+        })?;
 
         if !co.commit_exists(job.pr.head_sha.as_ref()) {
             overall_status
@@ -460,7 +465,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             let complete = evaluation_strategy
                 .all_evaluations_passed(Path::new(&refpath), &mut overall_status)?;
 
-            send_check_statuses(complete.checks, &repo);
             response.extend(schedule_builds(complete.builds, auto_schedule_build_archs));
 
             overall_status.set_with_description("^.^!", hubcaps::statuses::State::Success)?;
@@ -473,15 +477,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
 
         info!("Evaluations done!");
         Ok(self.actions().done(job, response))
-    }
-}
-
-fn send_check_statuses(checks: Vec<CheckRunOptions>, repo: &hubcaps::repositories::Repository) {
-    for check in checks {
-        match async_std::task::block_on(repo.checkruns().create(&check)) {
-            Ok(_) => debug!("Sent check update"),
-            Err(e) => warn!("Failed to send check update: {:?}", e),
-        }
     }
 }
 

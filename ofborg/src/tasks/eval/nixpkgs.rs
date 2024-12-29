@@ -9,15 +9,11 @@ use crate::nix::{self, Nix};
 use crate::nixenv::HydraNixEnv;
 use crate::outpathdiff::{OutPathDiff, PackageArch};
 use crate::tagger::{MaintainerPrTagger, PkgsAddedRemovedTagger, RebuildTagger};
-use crate::tasks::eval::{
-    Error, EvaluationComplete, EvaluationStrategy, StepResult,
-};
+use crate::tasks::eval::{Error, EvaluationComplete, EvaluationStrategy, StepResult};
 use crate::tasks::evaluate::{get_prefix, make_gist, update_labels};
 
 use std::path::Path;
 
-use chrono::Utc;
-use hubcaps::checks::{CheckRunOptions, CheckRunState, Conclusion, Output};
 use hubcaps::gists::Gists;
 use hubcaps::issues::{Issue, IssueRef};
 use hubcaps::repositories::Repository;
@@ -136,34 +132,6 @@ impl<'a> NixpkgsStrategy<'a> {
                 "Ofborg BUG: No outpath diff! Please report!",
             )))
         }
-    }
-
-    fn performance_stats(&self) -> Vec<CheckRunOptions> {
-        if let Some(ref rebuildsniff) = self.outpath_diff {
-            if let Some(report) = rebuildsniff.performance_diff() {
-                return vec![CheckRunOptions {
-                    name: "Evaluation Performance Report".to_owned(),
-                    actions: None,
-                    completed_at: Some(
-                        Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
-                    ),
-                    started_at: None,
-                    conclusion: Some(Conclusion::Success),
-                    status: Some(CheckRunState::Completed),
-                    details_url: None,
-                    external_id: None,
-                    head_sha: self.job.pr.head_sha.clone(),
-                    output: Some(Output {
-                        title: "Evaluator Performance Report".to_string(),
-                        summary: "".to_string(),
-                        text: Some(report.markdown()),
-                        annotations: None,
-                        images: None,
-                    }),
-                }];
-            }
-        }
-        vec![]
     }
 
     fn update_new_package_labels(&self) {
@@ -298,8 +266,8 @@ impl<'a> NixpkgsStrategy<'a> {
             status.set(hubcaps::statuses::State::Pending)?;
 
             let nixenv = HydraNixEnv::new(self.nix.clone(), dir.to_path_buf(), true);
-            match nixenv.execute_with_stats() {
-                Ok((pkgs, _stats)) => {
+            match nixenv.execute() {
+                Ok(pkgs) => {
                     let mut try_build: Vec<String> = pkgs
                         .keys()
                         .map(|pkgarch| pkgarch.package.clone())
@@ -539,10 +507,9 @@ impl<'a> EvaluationStrategy for NixpkgsStrategy<'a> {
 
         self.update_new_package_labels();
         self.update_rebuild_labels(dir, status)?;
-        let checks = self.performance_stats();
 
         let builds = self.check_meta_queue_builds(dir)?;
-        Ok(EvaluationComplete { builds, checks })
+        Ok(EvaluationComplete { builds })
     }
 }
 

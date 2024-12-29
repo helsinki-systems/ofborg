@@ -8,8 +8,6 @@ use crate::commitstatus::{CommitStatus, CommitStatusError};
 use crate::evalchecker::EvalChecker;
 use crate::message::buildjob::BuildJob;
 
-use hubcaps::checks::CheckRunOptions;
-
 use std::path::Path;
 
 pub trait EvaluationStrategy {
@@ -32,7 +30,6 @@ pub type StepResult<T> = Result<T, Error>;
 #[derive(Default)]
 pub struct EvaluationComplete {
     pub builds: Vec<BuildJob>,
-    pub checks: Vec<CheckRunOptions>,
 }
 
 #[derive(Debug)]
