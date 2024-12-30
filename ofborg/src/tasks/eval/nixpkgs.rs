@@ -151,14 +151,12 @@ impl<'a> NixpkgsStrategy<'a> {
     fn update_rebuild_labels(
         &self,
         dir: &Path,
-        overall_status: &mut CommitStatus,
     ) -> Result<(), Error> {
         if let Some(ref rebuildsniff) = self.outpath_diff {
             let mut rebuild_tags = RebuildTagger::new();
 
             if let Some(attrs) = rebuildsniff.calculate_rebuild() {
                 if !attrs.is_empty() {
-                    overall_status.set_url(self.gist_changed_paths(&attrs));
                     self.record_impacted_maintainers(dir, &attrs)?;
                 }
 
@@ -174,19 +172,6 @@ impl<'a> NixpkgsStrategy<'a> {
         Ok(())
     }
 
-    fn gist_changed_paths(&self, attrs: &[PackageArch]) -> Option<String> {
-        make_gist(
-            self.gists,
-            "Changed Paths",
-            Some("".to_owned()),
-            attrs
-                .iter()
-                .map(|attr| format!("{}\t{}", &attr.architecture, &attr.package))
-                .collect::<Vec<String>>()
-                .join("\n"),
-        )
-    }
-
     fn record_impacted_maintainers(&self, dir: &Path, attrs: &[PackageArch]) -> Result<(), Error> {
         let changed_attributes = attrs
             .iter()
@@ -196,16 +181,6 @@ impl<'a> NixpkgsStrategy<'a> {
         if let Some(ref changed_paths) = self.changed_paths {
             let maintainers =
                 ImpactedMaintainers::calculate(&self.nix, dir, changed_paths, &changed_attributes);
-
-            let gist_url = make_gist(
-                self.gists,
-                "Potential Maintainers",
-                Some("".to_owned()),
-                match &maintainers {
-                    Ok(maintainers) => format!("Maintainers:\n{maintainers}"),
-                    Err(err) => format!("Ignorable calculation error:\n{err:?}"),
-                },
-            );
 
             let prefix = get_prefix(self.repo.statuses(), &self.job.pr.head_sha)?;
 
@@ -219,7 +194,7 @@ impl<'a> NixpkgsStrategy<'a> {
                     self.job.pr.head_sha.clone(),
                     format!("{prefix}-eval-check-maintainers"),
                     String::from("large change, skipping automatic review requests"),
-                    gist_url,
+                    None,
                 );
                 status.set(hubcaps::statuses::State::Success)?;
                 return Ok(());
@@ -230,7 +205,7 @@ impl<'a> NixpkgsStrategy<'a> {
                 self.job.pr.head_sha.clone(),
                 format!("{prefix}-eval-check-maintainers"),
                 String::from("matching changed paths to changed attrs..."),
-                gist_url,
+                None,
             );
             status.set(hubcaps::statuses::State::Success)?;
 
@@ -499,14 +474,13 @@ impl<'a> EvaluationStrategy for NixpkgsStrategy<'a> {
         dir: &Path,
         status: &mut CommitStatus,
     ) -> StepResult<EvaluationComplete> {
-
         status.set_with_description(
             "Calculating Changed Outputs",
             hubcaps::statuses::State::Pending,
         )?;
 
         self.update_new_package_labels();
-        self.update_rebuild_labels(dir, status)?;
+        self.update_rebuild_labels(dir)?;
 
         let builds = self.check_meta_queue_builds(dir)?;
         Ok(EvaluationComplete { builds })
