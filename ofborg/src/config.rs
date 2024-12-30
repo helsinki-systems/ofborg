@@ -17,6 +17,8 @@ use tracing::{debug, error, info, warn};
 pub struct Config {
     /// Configuration for the webhook receiver
     pub github_webhook_receiver: Option<GithubWebhookConfig>,
+    /// Configuration for the logapi receiver
+    pub log_api_config: Option<LogApiConfig>,
     /// Configuration for the evaluation filter
     pub evaluation_filter: Option<EvaluationFilter>,
     /// Configuration for the GitHub comment filter
@@ -42,6 +44,26 @@ pub struct GithubWebhookConfig {
     pub webhook_secret_file: String,
     /// RabbitMQ broker to connect to
     pub rabbitmq: RabbitMqConfig,
+}
+
+fn default_logs_path() -> String {
+    "/var/log/ofborg".into()
+}
+
+fn default_serve_root() -> String {
+    "https://logs.ofborg.org/logfile".into()
+}
+
+/// Configuration for logapi
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogApiConfig {
+    /// Listen host/port
+    pub listen: String,
+    #[serde(default = "default_logs_path")]
+    pub logs_path: String,
+    #[serde(default = "default_serve_root")]
+    pub serve_root: String,
 }
 
 /// Configuration for the evaluation filter
@@ -168,12 +190,23 @@ impl Config {
     }
 
     pub fn github(&self) -> Github {
-        let token = std::fs::read_to_string(self.github_app.clone().expect("No GitHub app configured").oauth_client_secret_file)
-            .expect("Couldn't read from GitHub app token");
+        let token = std::fs::read_to_string(
+            self.github_app
+                .clone()
+                .expect("No GitHub app configured")
+                .oauth_client_secret_file,
+        )
+        .expect("Couldn't read from GitHub app token");
         let token = token.trim();
         Github::new(
             "github.com/NixOS/ofborg",
-            Credentials::Client(self.github_app.clone().expect("No GitHub app configured").oauth_client_id, token.to_owned()),
+            Credentials::Client(
+                self.github_app
+                    .clone()
+                    .expect("No GitHub app configured")
+                    .oauth_client_id,
+                token.to_owned(),
+            ),
         )
         .expect("Unable to create a github client instance")
     }
