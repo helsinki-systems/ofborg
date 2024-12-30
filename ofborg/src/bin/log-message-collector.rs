@@ -3,7 +3,7 @@ use std::error::Error;
 use std::path::PathBuf;
 
 use async_std::task;
-use tracing::info;
+use tracing::{error, info};
 
 use ofborg::config;
 use ofborg::easyamqp::{self, ChannelExt, ConsumerExt};
@@ -15,10 +15,15 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let arg = env::args()
         .nth(1)
-        .expect("usage: log-message-collector <config>");
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let Some(collector_cfg) = config::load(arg.as_ref()).log_message_collector else {
+        error!("No log message collector configuration found!");
+        panic!();
+    };
+
+    let conn = easylapin::from_config(&collector_cfg.rabbitmq)?;
     let mut chan = task::block_on(conn.create_channel())?;
 
     chan.declare_exchange(easyamqp::ExchangeConfig {
@@ -31,7 +36,7 @@ fn main() -> Result<(), Box<dyn Error>> {
         internal: false,
     })?;
 
-    let queue_name = "".to_owned();
+    let queue_name = "logs".to_owned();
     chan.declare_queue(easyamqp::QueueConfig {
         queue: queue_name.clone(),
         passive: false,
@@ -51,7 +56,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     // Regular channel, we want prefetching here.
     let handle = chan.consume(
         tasks::log_message_collector::LogMessageCollector::new(
-            PathBuf::from(cfg.log_storage.clone().unwrap().path),
+            PathBuf::from(collector_cfg.logs_path),
             100,
         ),
         easyamqp::ConsumeConfig {

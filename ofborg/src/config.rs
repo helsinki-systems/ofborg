@@ -27,13 +27,14 @@ pub struct Config {
     pub github_comment_poster: Option<GithubCommentPoster>,
     /// Configuration for the mass rebuilder
     pub mass_rebuilder: Option<MassRebuilder>,
+    /// Configuration for the log message collector
+    pub log_message_collector: Option<LogMessageCollector>,
     pub runner: RunnerConfig,
     pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
     pub nix: NixConfig,
     pub rabbitmq: RabbitMqConfig,
     pub github_app: Option<GithubAppConfig>,
-    pub log_storage: Option<LogStorage>,
 }
 
 /// Configuration for the webhook receiver
@@ -100,6 +101,16 @@ pub struct MassRebuilder {
     pub rabbitmq: RabbitMqConfig,
 }
 
+/// Configuration for the log message collector
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogMessageCollector {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+    /// Path where the logs reside
+    pub logs_path: String,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct FeedbackConfig {
     pub full_logs: bool,
@@ -141,11 +152,6 @@ pub struct GithubAppConfig {
     pub private_key: PathBuf,
     pub oauth_client_id: String,
     pub oauth_client_secret_file: PathBuf,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LogStorage {
-    pub path: String,
 }
 
 const fn default_instance() -> u8 {
