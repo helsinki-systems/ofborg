@@ -27,10 +27,11 @@ pub struct Config {
     pub github_comment_poster: Option<GithubCommentPoster>,
     /// Configuration for the mass rebuilder
     pub mass_rebuilder: Option<MassRebuilder>,
+    /// Configuration for the builder
+    pub builder: Option<Builder>,
     /// Configuration for the log message collector
     pub log_message_collector: Option<LogMessageCollector>,
     pub runner: RunnerConfig,
-    pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
     pub nix: NixConfig,
     pub rabbitmq: RabbitMqConfig,
@@ -101,6 +102,14 @@ pub struct MassRebuilder {
     pub rabbitmq: RabbitMqConfig,
 }
 
+/// Configuration for the builder
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Builder {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
 /// Configuration for the log message collector
 #[derive(Serialize, Deserialize, Debug)]
 #[serde(deny_unknown_fields)]
@@ -109,11 +118,6 @@ pub struct LogMessageCollector {
     pub rabbitmq: RabbitMqConfig,
     /// Path where the logs reside
     pub logs_path: String,
-}
-
-#[derive(Serialize, Deserialize, Debug)]
-pub struct FeedbackConfig {
-    pub full_logs: bool,
 }
 
 /// Configures the connection to a RabbitMQ instance
@@ -268,7 +272,13 @@ impl Config {
 
 impl RabbitMqConfig {
     pub fn as_uri(&self) -> Result<String, std::io::Error> {
-        let password = std::fs::read_to_string(&self.password_file)?;
+        let password = std::fs::read_to_string(&self.password_file).map_err(|e| {
+            error!(
+                "Unable to read RabbitMQ password file at {:?}",
+                self.password_file
+            );
+            e
+        })?;
         let uri = format!(
             "{}://{}:{}@{}/{}",
             if self.ssl { "amqps" } else { "amqp" },
