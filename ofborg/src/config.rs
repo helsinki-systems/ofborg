@@ -31,10 +31,11 @@ pub struct Config {
     pub builder: Option<Builder>,
     /// Configuration for the log message collector
     pub log_message_collector: Option<LogMessageCollector>,
+    /// Configuration for the stats server
+    pub stats: Option<Stats>,
     pub runner: RunnerConfig,
     pub checkout: CheckoutConfig,
     pub nix: NixConfig,
-    pub rabbitmq: RabbitMqConfig,
     pub github_app: Option<GithubAppConfig>,
 }
 
@@ -120,8 +121,17 @@ pub struct LogMessageCollector {
     pub logs_path: String,
 }
 
+/// Configuration for the stats exporter
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Stats {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
 /// Configures the connection to a RabbitMQ instance
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RabbitMqConfig {
     /// Whether or not to use SSL
     pub ssl: bool,

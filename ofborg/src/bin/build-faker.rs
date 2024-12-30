@@ -18,7 +18,7 @@ fn main() -> Result<(), Box<dyn Error>> {
     let arg = env::args().nth(1).expect("usage: build-faker <config>");
     let cfg = config::load(arg.as_ref());
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let conn = easylapin::from_config(&cfg.builder.unwrap().rabbitmq)?;
     let mut chan = task::block_on(conn.create_channel())?;
 
     let repo_msg = Repo {

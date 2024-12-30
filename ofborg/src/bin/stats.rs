@@ -4,7 +4,7 @@ use std::thread;
 
 use async_std::task;
 use hyper::server::{Request, Response, Server};
-use tracing::info;
+use tracing::{error, info};
 
 use ofborg::easyamqp::{ChannelExt, ConsumerExt};
 use ofborg::{config, easyamqp, easylapin, stats, tasks};
@@ -12,10 +12,18 @@ use ofborg::{config, easyamqp, easylapin, stats, tasks};
 fn main() -> Result<(), Box<dyn Error>> {
     ofborg::setup_log();
 
-    let arg = env::args().nth(1).expect("usage: stats <config>");
+    let arg = env::args()
+        .nth(1)
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let Some(stats_cfg) = config::load(arg.as_ref()).stats else {
+        error!("No stats configuration found!");
+        panic!();
+    };
+
+    let conn = easylapin::from_config(&stats_cfg.rabbitmq)?;
+
     let mut chan = task::block_on(conn.create_channel())?;
 
     let events = stats::RabbitMq::from_lapin(&cfg.whoami(), task::block_on(conn.create_channel())?);
