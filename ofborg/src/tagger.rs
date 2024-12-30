@@ -1,67 +1,7 @@
 use crate::maintainers::{Maintainer, MaintainersByPackage};
 use crate::outpathdiff::PackageArch;
-use crate::tasks;
 
 use tracing::info;
-
-pub struct StdenvTagger {
-    possible: Vec<String>,
-    selected: Vec<String>,
-}
-
-impl Default for StdenvTagger {
-    fn default() -> StdenvTagger {
-        let mut t = StdenvTagger {
-            possible: vec![
-                String::from("10.rebuild-linux-stdenv"),
-                String::from("10.rebuild-darwin-stdenv"),
-            ],
-            selected: vec![],
-        };
-        t.possible.sort();
-
-        t
-    }
-}
-
-impl StdenvTagger {
-    pub fn new() -> StdenvTagger {
-        Default::default()
-    }
-
-    pub fn changed(&mut self, systems: Vec<tasks::eval::stdenvs::System>) {
-        for system in systems {
-            match system {
-                tasks::eval::stdenvs::System::X8664Darwin => {
-                    self.selected.push(String::from("10.rebuild-darwin-stdenv"));
-                }
-                tasks::eval::stdenvs::System::X8664Linux => {
-                    self.selected.push(String::from("10.rebuild-linux-stdenv"));
-                }
-            }
-        }
-
-        for tag in &self.selected {
-            if !self.possible.contains(tag) {
-                panic!("Tried to add label {tag} but it isn't in the possible list!");
-            }
-        }
-    }
-
-    pub fn tags_to_add(&self) -> Vec<String> {
-        self.selected.clone()
-    }
-
-    pub fn tags_to_remove(&self) -> Vec<String> {
-        let mut remove = self.possible.clone();
-        for tag in &self.selected {
-            let pos = remove.binary_search(tag).unwrap();
-            remove.remove(pos);
-        }
-
-        remove
-    }
-}
 
 pub struct PkgsAddedRemovedTagger {
     possible: Vec<String>,

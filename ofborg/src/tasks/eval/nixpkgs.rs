@@ -8,9 +8,9 @@ use crate::message::evaluationjob::EvaluationJob;
 use crate::nix::{self, Nix};
 use crate::nixenv::HydraNixEnv;
 use crate::outpathdiff::{OutPathDiff, PackageArch};
-use crate::tagger::{MaintainerPrTagger, PkgsAddedRemovedTagger, RebuildTagger, StdenvTagger};
+use crate::tagger::{MaintainerPrTagger, PkgsAddedRemovedTagger, RebuildTagger};
 use crate::tasks::eval::{
-    stdenvs::Stdenvs, Error, EvaluationComplete, EvaluationStrategy, StepResult,
+    Error, EvaluationComplete, EvaluationStrategy, StepResult,
 };
 use crate::tasks::evaluate::{get_prefix, make_gist, update_labels};
 
@@ -55,7 +55,6 @@ pub struct NixpkgsStrategy<'a> {
     repo: &'a Repository,
     gists: &'a Gists,
     nix: Nix,
-    stdenv_diff: Option<Stdenvs>,
     outpath_diff: Option<OutPathDiff>,
     changed_paths: Option<Vec<String>>,
     touched_packages: Option<Vec<String>>,
@@ -80,7 +79,6 @@ impl<'a> NixpkgsStrategy<'a> {
             repo,
             gists,
             nix,
-            stdenv_diff: None,
             outpath_diff: None,
             changed_paths: None,
             touched_packages: None,
@@ -100,32 +98,6 @@ impl<'a> NixpkgsStrategy<'a> {
         }
 
         update_labels(self.issue_ref, &labels, &[]);
-    }
-
-    fn check_stdenvs_before(&mut self, dir: &Path) {
-        let mut stdenvs = Stdenvs::new(self.nix.clone(), dir.to_path_buf());
-        stdenvs.identify_before();
-        self.stdenv_diff = Some(stdenvs);
-    }
-
-    fn check_stdenvs_after(&mut self) {
-        if let Some(ref mut stdenvs) = self.stdenv_diff {
-            stdenvs.identify_after();
-        }
-    }
-
-    fn update_stdenv_labels(&self) {
-        if let Some(ref stdenvs) = self.stdenv_diff {
-            let mut stdenvtagger = StdenvTagger::new();
-            if !stdenvs.are_same() {
-                stdenvtagger.changed(stdenvs.changed());
-            }
-            update_labels(
-                self.issue_ref,
-                &stdenvtagger.tags_to_add(),
-                &stdenvtagger.tags_to_remove(),
-            );
-        }
     }
 
     fn check_outpaths_before(&mut self, dir: &Path) -> StepResult<()> {
@@ -380,12 +352,6 @@ impl<'a> EvaluationStrategy for NixpkgsStrategy<'a> {
 
     fn on_target_branch(&mut self, dir: &Path, status: &mut CommitStatus) -> StepResult<()> {
         status.set_with_description(
-            "Checking original stdenvs",
-            hubcaps::statuses::State::Pending,
-        )?;
-        self.check_stdenvs_before(dir);
-
-        status.set_with_description(
             "Checking original out paths",
             hubcaps::statuses::State::Pending,
         )?;
@@ -422,9 +388,6 @@ impl<'a> EvaluationStrategy for NixpkgsStrategy<'a> {
             &[],
             &["2.status: merge conflict".to_owned()],
         );
-
-        status.set_with_description("Checking new stdenvs", hubcaps::statuses::State::Pending)?;
-        self.check_stdenvs_after();
 
         status.set_with_description("Checking new out paths", hubcaps::statuses::State::Pending)?;
         self.check_outpaths_after()?;
@@ -568,7 +531,6 @@ impl<'a> EvaluationStrategy for NixpkgsStrategy<'a> {
         dir: &Path,
         status: &mut CommitStatus,
     ) -> StepResult<EvaluationComplete> {
-        self.update_stdenv_labels();
 
         status.set_with_description(
             "Calculating Changed Outputs",
