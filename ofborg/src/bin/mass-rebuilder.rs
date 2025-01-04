@@ -30,7 +30,6 @@ fn main() -> Result<(), Box<dyn Error>> {
 
     let root = Path::new(&cfg.checkout.root);
     let cloner = checkout::cached_cloner(&root.join(cfg.runner.instance.to_string()));
-    let nix = cfg.nix();
 
     let events = stats::RabbitMq::from_lapin(&cfg.whoami(), task::block_on(conn.create_channel())?);
 
@@ -47,8 +46,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let handle = easylapin::WorkerChannel(chan).consume(
         tasks::evaluate::EvaluationWorker::new(
             cloner,
-            &nix,
-            cfg.github(),
             cfg.github_app_vendingmachine(),
             cfg.acl(),
             cfg.runner.identity.clone(),

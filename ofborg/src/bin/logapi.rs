@@ -95,18 +95,14 @@ fn main() -> Result<(), Box<dyn Error>> {
                             warn!("attempt_id not found in file: {file_name}");
                             continue;
                         };
-                        let attempt_obj = attempts
-                            .entry(attempt_id)
-                            .or_insert_with(Attempt::default);
+                        let attempt_obj = attempts.entry(attempt_id).or_default();
                         if file_name.ends_with(".metadata.json") {
                             attempt_obj.metadata = Some(json);
                         } else {
                             attempt_obj.result = Some(json);
                         }
                     } else {
-                        let attempt_obj = attempts
-                            .entry(file_name.clone())
-                            .or_insert_with(Attempt::default);
+                        let attempt_obj = attempts.entry(file_name.clone()).or_default();
                         attempt_obj.log_url =
                             Some(format!("{}/{reqd}/{file_name}", &cfg.serve_root));
                     }

@@ -1,8 +1,6 @@
 use crate::maintainers::{Maintainer, MaintainersByPackage};
 use crate::outpathdiff::PackageArch;
 
-use tracing::info;
-
 pub struct PkgsAddedRemovedTagger {
     possible: Vec<String>,
     selected: Vec<String>,
@@ -45,128 +43,6 @@ impl PkgsAddedRemovedTagger {
     pub fn tags_to_remove(&self) -> Vec<String> {
         // The cleanup tag is too vague to automatically remove.
         vec![]
-    }
-}
-
-pub struct RebuildTagger {
-    possible: Vec<String>,
-    selected: Vec<String>,
-}
-
-impl Default for RebuildTagger {
-    fn default() -> RebuildTagger {
-        RebuildTagger {
-            possible: vec![
-                String::from("10.rebuild-darwin: 0"),
-                String::from("10.rebuild-darwin: 1"),
-                String::from("10.rebuild-darwin: 1-10"),
-                String::from("10.rebuild-darwin: 11-100"),
-                String::from("10.rebuild-darwin: 101-500"),
-                String::from("10.rebuild-darwin: 501+"),
-                String::from("10.rebuild-darwin: 501-1000"),
-                String::from("10.rebuild-darwin: 1001-2500"),
-                String::from("10.rebuild-darwin: 2501-5000"),
-                String::from("10.rebuild-darwin: 5001+"),
-                String::from("10.rebuild-linux: 0"),
-                String::from("10.rebuild-linux: 1"),
-                String::from("10.rebuild-linux: 1-10"),
-                String::from("10.rebuild-linux: 11-100"),
-                String::from("10.rebuild-linux: 101-500"),
-                String::from("10.rebuild-linux: 501+"),
-                String::from("10.rebuild-linux: 501-1000"),
-                String::from("10.rebuild-linux: 1001-2500"),
-                String::from("10.rebuild-linux: 2501-5000"),
-                String::from("10.rebuild-linux: 5001+"),
-            ],
-            selected: vec![],
-        }
-    }
-}
-
-impl RebuildTagger {
-    pub fn new() -> RebuildTagger {
-        Default::default()
-    }
-
-    pub fn parse_attrs(&mut self, attrs: Vec<PackageArch>) {
-        let mut counter_darwin = 0;
-        let mut counter_linux = 0;
-
-        for attr in attrs {
-            match attr.architecture.as_ref() {
-                "x86_64-darwin" => {
-                    counter_darwin += 1;
-                }
-                "aarch64-darwin" => {}
-                "x86_64-linux" => {
-                    counter_linux += 1;
-                }
-                "aarch64-linux" => {}
-                "i686-linux" => {}
-                arch => {
-                    info!("Unknown arch: {:?}", arch);
-                }
-            }
-        }
-
-        self.selected = vec![];
-        self.selected.extend(
-            RebuildTagger::bucket(counter_darwin)
-                .iter()
-                .map(|bucket| format!("10.rebuild-darwin: {bucket}"))
-                .collect::<Vec<String>>(),
-        );
-
-        self.selected.extend(
-            RebuildTagger::bucket(counter_linux)
-                .iter()
-                .map(|bucket| format!("10.rebuild-linux: {bucket}"))
-                .collect::<Vec<String>>(),
-        );
-
-        for tag in &self.selected {
-            if !self.possible.contains(tag) {
-                panic!("Tried to add label {tag} but it isn't in the possible list!");
-            }
-        }
-    }
-
-    pub fn tags_to_add(&self) -> Vec<String> {
-        self.selected.clone()
-    }
-
-    pub fn tags_to_remove(&self) -> Vec<String> {
-        let mut remove = vec![];
-
-        for tag in self.possible.clone().into_iter() {
-            if !self.selected.contains(&tag) {
-                remove.push(tag);
-            }
-        }
-
-        remove
-    }
-
-    fn bucket(count: u64) -> &'static [&'static str] {
-        if count > 5000 {
-            &["501+", "5001+"]
-        } else if count > 2500 {
-            &["501+", "2501-5000"]
-        } else if count > 1000 {
-            &["501+", "1001-2500"]
-        } else if count > 500 {
-            &["501+", "501-1000"]
-        } else if count > 100 {
-            &["101-500"]
-        } else if count > 10 {
-            &["11-100"]
-        } else if count > 1 {
-            &["1-10"]
-        } else if count > 0 {
-            &["1", "1-10"]
-        } else {
-            &["0"]
-        }
     }
 }
 

@@ -3,9 +3,7 @@ use crate::acl::Acl;
 use crate::checkout;
 use crate::commitstatus::{CommitStatus, CommitStatusError};
 use crate::config::GithubAppVendingMachine;
-use crate::files::file_to_str;
 use crate::message::{buildjob, evaluationjob};
-use crate::nix;
 use crate::stats::{self, Event};
 use crate::systems;
 use crate::tasks::eval;
@@ -17,14 +15,10 @@ use std::path::Path;
 use std::sync::RwLock;
 use std::time::Instant;
 
-use hubcaps::gists::Gists;
-use hubcaps::issues::Issue;
 use tracing::{debug_span, error, info, warn};
 
 pub struct EvaluationWorker<E> {
     cloner: checkout::CachedCloner,
-    nix: nix::Nix,
-    github: hubcaps::Github,
     github_vend: RwLock<GithubAppVendingMachine>,
     acl: Acl,
     identity: String,
@@ -32,11 +26,8 @@ pub struct EvaluationWorker<E> {
 }
 
 impl<E: stats::SysEvents> EvaluationWorker<E> {
-    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cloner: checkout::CachedCloner,
-        nix: &nix::Nix,
-        github: hubcaps::Github,
         github_vend: GithubAppVendingMachine,
         acl: Acl,
         identity: String,
@@ -44,8 +35,6 @@ impl<E: stats::SysEvents> EvaluationWorker<E> {
     ) -> EvaluationWorker<E> {
         EvaluationWorker {
             cloner,
-            nix: nix.without_limited_supported_systems(),
-            github,
             github_vend: RwLock::new(github_vend),
             acl,
             identity,
@@ -90,8 +79,6 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
 
         OneEval::new(
             github_client,
-            &self.github,
-            &self.nix,
             &self.acl,
             &mut self.events,
             &self.identity,
@@ -105,8 +92,6 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
 struct OneEval<'a, E> {
     client_app: &'a hubcaps::Github,
     repo: hubcaps::repositories::Repository,
-    gists: Gists,
-    nix: &'a nix::Nix,
     acl: &'a Acl,
     events: &'a mut E,
     identity: &'a str,
@@ -118,22 +103,16 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
     #[allow(clippy::too_many_arguments)]
     fn new(
         client_app: &'a hubcaps::Github,
-        client_legacy: &'a hubcaps::Github,
-        nix: &'a nix::Nix,
         acl: &'a Acl,
         events: &'a mut E,
         identity: &'a str,
         cloner: &'a checkout::CachedCloner,
         job: &'a evaluationjob::EvaluationJob,
     ) -> OneEval<'a, E> {
-        let gists = client_legacy.gists();
-
         let repo = client_app.repo(job.repo.owner.clone(), job.repo.name.clone());
         OneEval {
             client_app,
             repo,
-            gists,
-            nix,
             acl,
             events,
             identity,
@@ -188,15 +167,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         )
     }
 
-    fn make_gist(
-        &self,
-        filename: &str,
-        description: Option<String>,
-        content: String,
-    ) -> Option<String> {
-        make_gist(&self.gists, filename, description, content)
-    }
-
     fn worker_actions(&mut self) -> worker::Actions {
         let eval_result = self.evaluate_job().map_err(|eval_error| match eval_error {
             // Handle error cases which expect us to post statuses
@@ -204,12 +174,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             EvalWorkerError::EvalError(eval::Error::Fail(msg)) => {
                 self.update_status(msg, None, hubcaps::statuses::State::Failure)
             }
-            EvalWorkerError::EvalError(eval::Error::FailWithGist(msg, filename, content)) => self
-                .update_status(
-                    msg,
-                    self.make_gist(&filename, Some("".to_owned()), content),
-                    hubcaps::statuses::State::Failure,
-                ),
             EvalWorkerError::EvalError(eval::Error::CommitStatusWrite(e)) => Err(e),
             EvalWorkerError::CommitStatusWrite(e) => Err(e),
         });
@@ -259,17 +223,12 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         }
     }
 
-    // FIXME: remove with rust/cargo update
-    #[allow(clippy::cognitive_complexity)]
     fn evaluate_job(&mut self) -> Result<worker::Actions, EvalWorkerError> {
         let job = self.job;
         let repo = self
             .client_app
             .repo(self.job.repo.owner.clone(), self.job.repo.name.clone());
-        let pulls = repo.pulls();
-        let pull = pulls.get(job.pr.number);
         let issue_ref = repo.issue(job.pr.number);
-        let issue: Issue;
         let auto_schedule_build_archs: Vec<systems::System>;
 
         match async_std::task::block_on(issue_ref.get()) {
@@ -288,8 +247,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                         &job.repo.full_name,
                     );
                 }
-
-                issue = iss;
             }
 
             Err(e) => {
@@ -300,15 +257,7 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             }
         };
 
-        let mut evaluation_strategy = eval::NixpkgsStrategy::new(
-            job,
-            &pull,
-            &issue,
-            &issue_ref,
-            &repo,
-            &self.gists,
-            self.nix.clone(),
-        );
+        let mut evaluation_strategy = eval::NixpkgsStrategy::new(job, &issue_ref);
 
         let prefix = get_prefix(repo.statuses(), &job.pr.head_sha)?;
 
@@ -421,7 +370,7 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             .evaluation_checks()
             .into_iter()
             .map(|check| {
-                let mut status = CommitStatus::new(
+                let status = CommitStatus::new(
                     repo.statuses(),
                     job.pr.head_sha.clone(),
                     format!("{prefix}-eval-{}", check.name()),
@@ -433,24 +382,11 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                     .set(hubcaps::statuses::State::Pending)
                     .expect("Failed to set status on eval strategy");
 
-                let state: hubcaps::statuses::State;
-                let gist_url: Option<String>;
-                match check.execute(Path::new(&refpath)) {
-                    Ok(_) => {
-                        state = hubcaps::statuses::State::Success;
-                        gist_url = None;
-                    }
-                    Err(mut out) => {
-                        state = hubcaps::statuses::State::Failure;
-                        gist_url = self.make_gist(
-                            &format!("{prefix}-eval-{}", check.name()),
-                            Some(format!("{state:?}")),
-                            file_to_str(&mut out),
-                        );
-                    }
-                }
+                let state = match check.execute(Path::new(&refpath)) {
+                    Ok(_) => hubcaps::statuses::State::Success,
+                    Err(_) => hubcaps::statuses::State::Failure,
+                };
 
-                status.set_url(gist_url);
                 status
                     .set(state.clone())
                     .expect("Failed to set status on eval strategy");
@@ -467,8 +403,7 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         let mut response: worker::Actions = vec![];
 
         if eval_results {
-            let complete = evaluation_strategy
-                .all_evaluations_passed(Path::new(&refpath), &mut overall_status)?;
+            let complete = evaluation_strategy.all_evaluations_passed(&mut overall_status)?;
 
             response.extend(schedule_builds(complete.builds, auto_schedule_build_archs));
 
@@ -515,32 +450,6 @@ fn schedule_builds(
     }
 
     response
-}
-
-pub fn make_gist(
-    gists: &hubcaps::gists::Gists,
-    name: &str,
-    description: Option<String>,
-    contents: String,
-) -> Option<String> {
-    let mut files: HashMap<String, hubcaps::gists::Content> = HashMap::new();
-    files.insert(
-        name.to_string(),
-        hubcaps::gists::Content {
-            filename: Some(name.to_string()),
-            content: contents,
-        },
-    );
-
-    Some(
-        async_std::task::block_on(gists.create(&hubcaps::gists::GistOptions {
-            description,
-            public: Some(true),
-            files,
-        }))
-        .expect("Failed to create gist!")
-        .html_url,
-    )
 }
 
 pub fn update_labels(issueref: &hubcaps::issues::IssueRef, add: &[String], remove: &[String]) {

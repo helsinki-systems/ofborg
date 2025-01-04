@@ -282,12 +282,11 @@ impl Config {
 
 impl RabbitMqConfig {
     pub fn as_uri(&self) -> Result<String, std::io::Error> {
-        let password = std::fs::read_to_string(&self.password_file).map_err(|e| {
+        let password = std::fs::read_to_string(&self.password_file).inspect_err(|_| {
             error!(
                 "Unable to read RabbitMQ password file at {:?}",
                 self.password_file
             );
-            e
         })?;
         let uri = format!(
             "{}://{}:{}@{}/{}",

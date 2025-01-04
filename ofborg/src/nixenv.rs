@@ -23,7 +23,7 @@ impl HydraNixEnv {
     }
 
     pub fn execute(&self) -> Result<outpathdiff::PackageOutPaths, Error> {
-        let (status, _stdout, stderr) = self.run_nix_env();
+        let (status, stdout, _stderr) = self.run_nix_env();
 
         if status {
             let outpaths = outpathdiff::parse_json(
@@ -31,12 +31,13 @@ impl HydraNixEnv {
             )
             .map_err(|e| Error::Internal(e))?;
 
-            let evaluation_errors = BufReader::new(stderr)
+            let evaluation_errors = BufReader::new(stdout)
                 .lines()
                 .collect::<Result<Vec<String>, _>>()?
                 .into_iter()
                 .filter(|msg| !msg.trim().is_empty())
                 .filter(|line| !nix::is_user_setting_warning(line))
+                .filter(|line| !line.starts_with("/nix/store/"))
                 .collect::<Vec<String>>();
 
             if !evaluation_errors.is_empty() {
@@ -45,7 +46,7 @@ impl HydraNixEnv {
 
             Ok(outpaths)
         } else {
-            Err(Error::CommandFailed(stderr))
+            Err(Error::CommandFailed(stdout))
         }
     }
 
@@ -91,6 +92,7 @@ impl HydraNixEnv {
     }
 }
 
+#[derive(Debug)]
 pub enum Error {
     Io(io::Error),
     Internal(Box<dyn std::error::Error>),

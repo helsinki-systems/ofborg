@@ -18,7 +18,6 @@ pub trait EvaluationStrategy {
     fn evaluation_checks(&self) -> Vec<EvalChecker>;
     fn all_evaluations_passed(
         &mut self,
-        co: &Path,
         status: &mut CommitStatus,
     ) -> StepResult<EvaluationComplete>;
 }
@@ -34,7 +33,6 @@ pub struct EvaluationComplete {
 pub enum Error {
     CommitStatusWrite(CommitStatusError),
     Fail(String),
-    FailWithGist(String, String, String),
 }
 
 impl From<CommitStatusError> for Error {

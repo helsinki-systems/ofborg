@@ -139,7 +139,7 @@ fn name_to_parts(name: &str) -> Vec<String> {
             parts.push(buf.to_owned());
             buf = String::from("");
         }
-        buf.push_str(&c.to_string());
+        buf.push(c);
     }
     if !buf.is_empty() {
         parts.push(buf.to_owned());
