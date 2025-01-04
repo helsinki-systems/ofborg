@@ -147,13 +147,6 @@ pub trait GitClonable {
             .stdout(Stdio::null())
             .status()?;
 
-        debug!("git gc");
-        Command::new("git")
-            .arg("gc")
-            .current_dir(self.clone_to())
-            .stdout(Stdio::null())
-            .status()?;
-
         lock.unlock();
 
         Ok(())
