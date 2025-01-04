@@ -270,12 +270,6 @@ impl Config {
             self.nix.remote.clone(),
             self.nix.build_timeout_seconds,
             self.nix.initial_heap_size.clone(),
-            self.nix.list_cores.unwrap_or(4),
-            self.nix.list_chunk_size.unwrap_or(10000),
-            self.nix
-                .list_system
-                .clone()
-                .unwrap_or(String::from("x86_64-linux")),
         )
     }
 }
