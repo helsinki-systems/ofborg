@@ -67,8 +67,8 @@ pub trait GitClonable {
         let result = Command::new("git")
             .arg("clone")
             .args(self.extra_clone_args())
-            .arg(&self.clone_from())
-            .arg(&self.clone_to())
+            .arg(self.clone_from())
+            .arg(self.clone_to())
             .stdout(Stdio::null())
             .status()?;
 
@@ -143,13 +143,6 @@ pub trait GitClonable {
             .arg("-x")
             .arg("-d")
             .arg("--force")
-            .current_dir(self.clone_to())
-            .stdout(Stdio::null())
-            .status()?;
-
-        debug!("git gc");
-        Command::new("git")
-            .arg("gc")
             .current_dir(self.clone_to())
             .stdout(Stdio::null())
             .status()?;

@@ -4,31 +4,26 @@ use std::path::Path;
 
 use async_std::task::{self, JoinHandle};
 use futures_util::future;
-use tracing::{info, warn};
+use tracing::{error, info, warn};
 
 use ofborg::easyamqp::{self, ChannelExt, ConsumerExt};
 use ofborg::easylapin;
 use ofborg::{checkout, config, tasks};
 
-// FIXME: remove with rust/cargo update
-#[allow(clippy::cognitive_complexity)]
 fn main() -> Result<(), Box<dyn Error>> {
     ofborg::setup_log();
 
-    let arg = env::args().nth(1).expect("usage: builder <config>");
+    let arg = env::args()
+        .nth(1)
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    if !cfg.feedback.full_logs {
-        warn!("Please define feedback.full_logs in your configuration to true!");
-        warn!("feedback.full_logs when true will cause the full build log to be sent back");
-        warn!("to the server, and be viewable by everyone.");
-        warn!("");
-        warn!("Builders are no longer allowed to operate with this off");
-        warn!("so your builder will no longer start.");
+    let Some(builder_cfg) = config::load(arg.as_ref()).builder else {
+        error!("No builder configuration found!");
         panic!();
     };
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let conn = easylapin::from_config(&builder_cfg.rabbitmq)?;
     let mut handles = Vec::new();
 
     for system in &cfg.nix.system {

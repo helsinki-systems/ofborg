@@ -1,7 +1,6 @@
 use std::env;
 use std::error::Error;
 use std::path::Path;
-use std::process;
 
 use async_std::task;
 use tracing::{error, info};
@@ -13,31 +12,24 @@ use ofborg::easylapin;
 use ofborg::stats;
 use ofborg::tasks;
 
-// FIXME: remove with rust/cargo update
-#[allow(clippy::cognitive_complexity)]
 fn main() -> Result<(), Box<dyn Error>> {
     ofborg::setup_log();
 
-    let arg = env::args().nth(1).expect("usage: mass-rebuilder <config>");
+    let arg = env::args()
+        .nth(1)
+        .unwrap_or_else(|| panic!("usage: {} <config>", std::env::args().next().unwrap()));
     let cfg = config::load(arg.as_ref());
 
-    let memory_info = sys_info::mem_info().expect("Unable to get memory information from OS");
-
-    if memory_info.avail < 8 * 1024 * 1024 {
-        // seems this stuff is in kilobytes?
-        error!(
-            "Less than 8Gb of memory available (got {:.2}Gb). Aborting.",
-            (memory_info.avail as f32) / 1024.0 / 1024.0
-        );
-        process::exit(1);
+    let Some(rebuilder_cfg) = config::load(arg.as_ref()).mass_rebuilder else {
+        error!("No mass rebuilder configuration found!");
+        panic!();
     };
 
-    let conn = easylapin::from_config(&cfg.rabbitmq)?;
+    let conn = easylapin::from_config(&rebuilder_cfg.rabbitmq)?;
     let mut chan = task::block_on(conn.create_channel())?;
 
     let root = Path::new(&cfg.checkout.root);
     let cloner = checkout::cached_cloner(&root.join(cfg.runner.instance.to_string()));
-    let nix = cfg.nix();
 
     let events = stats::RabbitMq::from_lapin(&cfg.whoami(), task::block_on(conn.create_channel())?);
 
@@ -54,8 +46,6 @@ fn main() -> Result<(), Box<dyn Error>> {
     let handle = easylapin::WorkerChannel(chan).consume(
         tasks::evaluate::EvaluationWorker::new(
             cloner,
-            &nix,
-            cfg.github(),
             cfg.github_app_vendingmachine(),
             cfg.acl(),
             cfg.runner.identity.clone(),

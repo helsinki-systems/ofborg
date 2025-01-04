@@ -25,13 +25,18 @@ pub struct Config {
     pub github_comment_filter: Option<GithubCommentFilter>,
     /// Configuration for the GitHub comment poster
     pub github_comment_poster: Option<GithubCommentPoster>,
+    /// Configuration for the mass rebuilder
+    pub mass_rebuilder: Option<MassRebuilder>,
+    /// Configuration for the builder
+    pub builder: Option<Builder>,
+    /// Configuration for the log message collector
+    pub log_message_collector: Option<LogMessageCollector>,
+    /// Configuration for the stats server
+    pub stats: Option<Stats>,
     pub runner: RunnerConfig,
-    pub feedback: FeedbackConfig,
     pub checkout: CheckoutConfig,
     pub nix: NixConfig,
-    pub rabbitmq: RabbitMqConfig,
     pub github_app: Option<GithubAppConfig>,
-    pub log_storage: Option<LogStorage>,
 }
 
 /// Configuration for the webhook receiver
@@ -90,13 +95,43 @@ pub struct GithubCommentPoster {
     pub rabbitmq: RabbitMqConfig,
 }
 
+/// Configuration for the mass rebuilder
 #[derive(Serialize, Deserialize, Debug)]
-pub struct FeedbackConfig {
-    pub full_logs: bool,
+#[serde(deny_unknown_fields)]
+pub struct MassRebuilder {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the builder
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Builder {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+}
+
+/// Configuration for the log message collector
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct LogMessageCollector {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
+    /// Path where the logs reside
+    pub logs_path: String,
+}
+
+/// Configuration for the stats exporter
+#[derive(Serialize, Deserialize, Debug)]
+#[serde(deny_unknown_fields)]
+pub struct Stats {
+    /// RabbitMQ broker to connect to
+    pub rabbitmq: RabbitMqConfig,
 }
 
 /// Configures the connection to a RabbitMQ instance
 #[derive(Serialize, Deserialize, Debug, Clone)]
+#[serde(deny_unknown_fields)]
 pub struct RabbitMqConfig {
     /// Whether or not to use SSL
     pub ssl: bool,
@@ -117,6 +152,12 @@ pub struct NixConfig {
     pub remote: String,
     pub build_timeout_seconds: u16,
     pub initial_heap_size: Option<String>,
+    /// CPU cores for package listing
+    pub list_cores: Option<u64>,
+    /// Chunk size for package listing
+    pub list_chunk_size: Option<u64>,
+    /// System to evaluate when calculating package diff
+    pub list_system: Option<String>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -125,11 +166,6 @@ pub struct GithubAppConfig {
     pub private_key: PathBuf,
     pub oauth_client_id: String,
     pub oauth_client_secret_file: PathBuf,
-}
-
-#[derive(Serialize, Deserialize, Debug, Clone)]
-pub struct LogStorage {
-    pub path: String,
 }
 
 const fn default_instance() -> u8 {
@@ -240,7 +276,12 @@ impl Config {
 
 impl RabbitMqConfig {
     pub fn as_uri(&self) -> Result<String, std::io::Error> {
-        let password = std::fs::read_to_string(&self.password_file)?;
+        let password = std::fs::read_to_string(&self.password_file).inspect_err(|_| {
+            error!(
+                "Unable to read RabbitMQ password file at {:?}",
+                self.password_file
+            );
+        })?;
         let uri = format!(
             "{}://{}:{}@{}/{}",
             if self.ssl { "amqps" } else { "amqp" },
