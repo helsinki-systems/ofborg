@@ -1789,7 +1789,6 @@ dependencies = [
  "async-trait",
  "brace-expand",
  "chrono",
- "either",
  "fs2",
  "futures",
  "futures-util",
@@ -1803,7 +1802,6 @@ dependencies = [
  "lapin",
  "lru-cache",
  "md5",
- "mime",
  "nom 8.0.0",
  "parking_lot",
  "regex",
@@ -1823,8 +1821,8 @@ dependencies = [
 name = "ofborg-simple-build"
 version = "0.1.0"
 dependencies = [
- "log",
  "ofborg",
+ "tracing",
 ]
 
 [[package]]
@@ -2423,9 +2421,9 @@ checksum = "f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f"
 
 [[package]]
 name = "rustls-webpki"
-version = "0.103.12"
+version = "0.103.13"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8279bb85272c9f10811ae6a6c547ff594d6a7f3c6c6b02ee9726d1d0dcfcdd06"
+checksum = "61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e"
 dependencies = [
  "aws-lc-rs",
  "ring 0.17.14",
