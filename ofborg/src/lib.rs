@@ -37,6 +37,8 @@ pub mod test_scratch;
 pub mod worker;
 pub mod writetoline;
 
+pub use hubcaps;
+
 pub mod ofborg {
     pub use crate::acl;
     pub use crate::asynccmd;
