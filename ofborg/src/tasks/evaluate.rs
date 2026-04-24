@@ -19,7 +19,7 @@ use tracing::{debug_span, error, info, warn};
 
 pub struct EvaluationWorker<E> {
     cloner: checkout::CachedCloner,
-    github_vend: tokio::sync::RwLock<GithubAppVendingMachine>,
+    github_vend: Option<tokio::sync::RwLock<GithubAppVendingMachine>>,
     acl: Acl,
     identity: String,
     events: E,
@@ -28,14 +28,14 @@ pub struct EvaluationWorker<E> {
 impl<E: stats::SysEvents> EvaluationWorker<E> {
     pub fn new(
         cloner: checkout::CachedCloner,
-        github_vend: GithubAppVendingMachine,
+        github_vend: Option<GithubAppVendingMachine>,
         acl: Acl,
         identity: String,
         events: E,
     ) -> EvaluationWorker<E> {
         EvaluationWorker {
             cloner,
-            github_vend: tokio::sync::RwLock::new(github_vend),
+            github_vend: github_vend.map(tokio::sync::RwLock::new),
             acl,
             identity,
             events,
@@ -73,12 +73,19 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
         let span = debug_span!("job", pr = ?job.pr.number);
         let _enter = span.enter();
 
-        let mut vending_machine = self.github_vend.write().await;
+        let github_client = if let Some(github_vend) = self.github_vend.as_ref() {
+            let mut vending_machine = github_vend.write().await;
 
-        let github_client = vending_machine
-            .for_repo(&job.repo.owner, &job.repo.name)
-            .await
-            .expect("Failed to get a github client token");
+            Some(
+                vending_machine
+                    .for_repo(&job.repo.owner, &job.repo.name)
+                    .await
+                    .expect("Failed to get a github client token")
+                    .clone(),
+            )
+        } else {
+            None
+        };
 
         OneEval::new(
             github_client,
@@ -94,8 +101,9 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
 }
 
 struct OneEval<'a, E> {
-    client_app: &'a hubcaps::Github,
+    client_app: hubcaps::Github,
     repo: hubcaps::repositories::Repository,
+    enable_publish: bool,
     acl: &'a Acl,
     events: &'a mut E,
     identity: &'a str,
@@ -106,17 +114,25 @@ struct OneEval<'a, E> {
 impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
     #[allow(clippy::too_many_arguments)]
     fn new(
-        client_app: &'a hubcaps::Github,
+        client_app: Option<hubcaps::Github>,
         acl: &'a Acl,
         events: &'a mut E,
         identity: &'a str,
         cloner: &'a checkout::CachedCloner,
         job: &'a evaluationjob::EvaluationJob,
     ) -> OneEval<'a, E> {
-        let repo = client_app.repo(job.repo.owner.clone(), job.repo.name.clone());
+        let (client_app, repo, enable_publish) = if let Some(client_app) = client_app {
+            let repo = client_app.repo(job.repo.owner.clone(), job.repo.name.clone());
+            (client_app.clone(), repo, true)
+        } else {
+            let gh = hubcaps::Github::new("ofborg-send-event", None).unwrap();
+            let repo = gh.repo(job.repo.owner.clone(), job.repo.name.clone());
+            (gh, repo, false)
+        };
         OneEval {
             client_app,
             repo,
+            enable_publish,
             acl,
             events,
             identity,
@@ -135,6 +151,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         url: Option<String>,
         state: hubcaps::statuses::State,
     ) -> Result<(), CommitStatusError> {
+        if !self.enable_publish {
+            return Ok(());
+        }
+
         let description = if description.len() >= 140 {
             warn!(
                 "description is over 140 char; truncating: {:?}",
@@ -186,8 +206,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
 
         match eval_result {
             Ok(eval_actions) => {
-                let issue_ref = self.repo.issue(self.job.pr.number);
-                update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]).await;
+                if self.enable_publish {
+                    let issue_ref = self.repo.issue(self.job.pr.number);
+                    update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]).await;
+                }
 
                 eval_actions
             }
@@ -195,8 +217,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                 // There was an error during eval, but we successfully
                 // updated the PR.
 
-                let issue_ref = self.repo.issue(self.job.pr.number);
-                update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]).await;
+                if self.enable_publish {
+                    let issue_ref = self.repo.issue(self.job.pr.number);
+                    update_labels(&issue_ref, &[], &[String::from("ofborg-internal-error")]).await;
+                }
 
                 self.actions().skip(self.job)
             }
@@ -221,8 +245,10 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                     "Internal error writing commit status: {:?}, marking internal error",
                     cswerr
                 );
-                let issue_ref = self.repo.issue(self.job.pr.number);
-                update_labels(&issue_ref, &[String::from("ofborg-internal-error")], &[]).await;
+                if self.enable_publish {
+                    let issue_ref = self.repo.issue(self.job.pr.number);
+                    update_labels(&issue_ref, &[String::from("ofborg-internal-error")], &[]).await;
+                }
 
                 self.actions().skip(self.job)
             }
@@ -274,12 +300,15 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             "Starting".to_owned(),
             None,
         );
+        overall_status.set_enable_publish(self.enable_publish);
 
         overall_status
             .set_with_description("Starting", hubcaps::statuses::State::Pending)
             .await?;
 
-        evaluation_strategy.pre_clone().await?;
+        if self.enable_publish {
+            evaluation_strategy.pre_clone().await?;
+        }
 
         let project = self
             .cloner
@@ -389,6 +418,7 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             .set_with_description("Beginning Evaluations", hubcaps::statuses::State::Pending)
             .await?;
 
+        let enable_publish = self.enable_publish;
         let eval_results: bool = futures::stream::iter(evaluation_strategy.evaluation_checks())
             .map(|check| {
                 // We need to clone or move variables into the async block
@@ -397,13 +427,14 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                 let refpath = refpath.clone();
 
                 async move {
-                    let status = CommitStatus::new(
+                    let mut status = CommitStatus::new(
                         repo_statuses,
                         head_sha,
                         format!("{prefix}-eval-{}", check.name()),
                         check.cli_cmd(),
                         None,
                     );
+                    status.set_enable_publish(enable_publish);
 
                     status
                         .set(hubcaps::statuses::State::Pending)

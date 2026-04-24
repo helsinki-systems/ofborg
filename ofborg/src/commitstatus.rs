@@ -7,6 +7,7 @@ pub struct CommitStatus {
     context: String,
     description: String,
     url: String,
+    enable_publish: bool,
 }
 
 impl CommitStatus {
@@ -23,11 +24,16 @@ impl CommitStatus {
             context,
             description,
             url: "".to_owned(),
+            enable_publish: true,
         };
 
         stat.set_url(url);
 
         stat
+    }
+
+    pub fn set_enable_publish(&mut self, enable_publish: bool) {
+        self.enable_publish = enable_publish;
     }
 
     pub fn set_url(&mut self, url: Option<String>) {
@@ -48,6 +54,10 @@ impl CommitStatus {
     }
 
     pub async fn set(&self, state: hubcaps::statuses::State) -> Result<(), CommitStatusError> {
+        if !self.enable_publish {
+            return Ok(());
+        }
+
         let desc = if self.description.len() >= 140 {
             warn!(
                 "description is over 140 char; truncating: {:?}",
