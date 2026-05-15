@@ -12,6 +12,7 @@ use crate::tasks::eval::EvaluationStrategy;
 use crate::worker;
 use futures::stream::StreamExt;
 use futures_util::TryFutureExt;
+use std::io::{BufRead, BufReader};
 
 use std::path::Path;
 use std::time::Instant;
@@ -600,23 +601,25 @@ fn resolve_attrs_to_drv_paths(
         })
         .unwrap_or(nix::File::DefaultNixpkgs);
 
-    match nix.safely_instantiate_attrs(nixpkgs, file, all_attrs) {
-        Ok(f) => {
-            use std::io::{BufRead, BufReader};
-            BufReader::new(f)
-                .lines()
-                .map_while(Result::ok)
-                .filter(|line| line.trim().ends_with(".drv"))
-                .map(|line| line.trim().to_owned())
-                .collect()
-        }
-        Err(f) => {
-            use std::io::{BufRead, BufReader};
-            let stderr: Vec<String> = BufReader::new(f).lines().map_while(Result::ok).collect();
-            warn!("nix-instantiate failed for attrs: {:?}", stderr.join("\n"));
-            vec![]
-        }
-    }
+    all_attrs
+        .into_iter()
+        .flat_map(
+            |attr| match nix.safely_instantiate_attrs(nixpkgs, file, vec![attr.clone()]) {
+                Ok(f) => BufReader::new(f)
+                    .lines()
+                    .map_while(Result::ok)
+                    .filter(|line| line.trim().ends_with(".drv"))
+                    .map(|line| line.trim().to_owned())
+                    .collect::<Vec<String>>(),
+                Err(f) => {
+                    let stderr: Vec<String> =
+                        BufReader::new(f).lines().map_while(Result::ok).collect();
+                    warn!("nix-instantiate failed for attrs: {:?}", stderr.join("\n"));
+                    vec![]
+                }
+            },
+        )
+        .collect()
 }
 
 pub async fn update_labels(
