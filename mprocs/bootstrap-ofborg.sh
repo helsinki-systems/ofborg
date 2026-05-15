@@ -3,12 +3,14 @@
 set -euo pipefail
 
 DATA_DIR="${DATA_DIR:-$(pwd)/.ofborg-data}"
+mkdir -pv "${DATA_DIR}"
 
 gen_secret() {
   openssl rand -base64 18 | tr -d '/+=' | head -c 24
 }
-
-gen_secret > "${DATA_DIR}/.webhook-secret"
+if [[ ! -f "${DATA_DIR}/.webhook-secret" ]]; then
+  gen_secret > "${DATA_DIR}/.webhook-secret"
+fi
 
 cat <<EOF > .ofborg-data/local.json
 {
