@@ -19,6 +19,9 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use lapin::options::{BasicAckOptions, BasicConsumeOptions, QueueDeclareOptions};
+use lapin::types::FieldTable;
+use lapin::{Connection, ConnectionProperties};
 use nix_utils::BaseStore as _;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
@@ -114,19 +117,7 @@ async fn create_builds(
     Ok(response.into_inner().build_ids)
 }
 
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    hydra_tracing::init()?;
-    nix_utils::init_nix();
-
-    let cli = Arc::new(config::Cli::new());
-    let hostname = cli.get_hostname();
-
-    tracing::info!(
-        "ofborg-evaluator starting, hostname={hostname}, endpoint={}",
-        cli.gateway_endpoint
-    );
-
+async fn run_cli_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
     let drv_paths: Vec<nix_utils::StorePath> = cli
         .drv
         .iter()
@@ -157,5 +148,177 @@ async fn main() -> anyhow::Result<()> {
     // Keep the process alive so the tunnel stays connected
     loop {
         tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
+    }
+}
+
+#[allow(clippy::too_many_lines)]
+async fn run_consumer_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
+    let rabbit_host = cli
+        .rabbitmq_host
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-host is required in consumer mode"))?;
+    let rabbit_username = cli
+        .rabbitmq_username
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-username is required in consumer mode"))?;
+    let rabbit_password_file = cli
+        .rabbitmq_password_file
+        .clone()
+        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-password-file is required in consumer mode"))?;
+
+    let password = fs_err::tokio::read_to_string(&rabbit_password_file)
+        .await?
+        .trim()
+        .to_owned();
+
+    let scheme = if cli.rabbitmq_ssl { "amqps" } else { "amqp" };
+    let uri = format!(
+        "{}://{}:{}@{}:{}/{}",
+        scheme, rabbit_username, password, rabbit_host, cli.rabbitmq_port, cli.rabbitmq_vhost
+    );
+
+    tracing::info!("connecting to RabbitMQ at {rabbit_host}");
+    let conn = Connection::connect(&uri, ConnectionProperties::default()).await?;
+    let chan = conn.create_channel().await?;
+
+    // Declare the hydra-eval-jobs queue (must match what mass-rebuilder publishes to)
+    chan.queue_declare(
+        "hydra-eval-jobs".into(),
+        QueueDeclareOptions {
+            passive: false,
+            durable: true,
+            exclusive: false,
+            auto_delete: false,
+            nowait: false,
+        },
+        FieldTable::default(),
+    )
+    .await?;
+
+    tracing::info!("connecting to queue-runner gRPC");
+    let mut client = grpc::init_client(&cli).await?;
+
+    tracing::info!("consuming from hydra-eval-jobs");
+    let mut consumer = chan
+        .basic_consume(
+            "hydra-eval-jobs".into(),
+            format!("{}-hydra-evaluator", cli.get_hostname()).into(),
+            BasicConsumeOptions::default(),
+            FieldTable::default(),
+        )
+        .await?;
+
+    while let Some(Ok(delivery)) = consumer.next().await {
+        let body = &delivery.data;
+        let job: ofborg::message::hydra_eval_job::HydraEvalJob = match serde_json::from_slice(body)
+        {
+            Ok(job) => job,
+            Err(e) => {
+                tracing::error!(
+                    "Failed to deserialize HydraEvalJob: {e}, body: {:?}",
+                    std::str::from_utf8(body)
+                );
+                let _ = chan
+                    .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                    .await;
+                continue;
+            }
+        };
+
+        tracing::info!(
+            "Processing HydraEvalJob for {}/{} PR #{} ({} drv paths, jobset_id={})",
+            job.repo.owner,
+            job.repo.name,
+            job.pr.number,
+            job.drv_paths.len(),
+            job.jobset_id,
+        );
+
+        if job.drv_paths.is_empty() {
+            tracing::warn!("Received HydraEvalJob with no drv paths, acking");
+            let _ = chan
+                .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+                .await;
+            continue;
+        }
+
+        let drv_paths: Vec<nix_utils::StorePath> = job
+            .drv_paths
+            .iter()
+            .map(|s| nix_utils::StorePath::new(s))
+            .collect();
+
+        match import_drvs(&mut client, &drv_paths).await {
+            Ok(()) => {
+                tracing::info!("Successfully imported {} drv(s)", drv_paths.len());
+            }
+            Err(e) => {
+                tracing::error!("Failed to import drvs: {e:?}");
+                // Nack and requeue so another consumer can retry
+                let _ = chan
+                    .basic_nack(
+                        delivery.delivery_tag,
+                        lapin::options::BasicNackOptions {
+                            requeue: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                continue;
+            }
+        }
+
+        match create_builds(&mut client, job.jobset_id, &drv_paths).await {
+            Ok(build_ids) => {
+                tracing::info!("Created {} build(s)", build_ids.len());
+                for (drv_path, build_id) in &build_ids {
+                    tracing::info!("  {build_id} <- {drv_path}");
+                }
+            }
+            Err(e) => {
+                tracing::error!("Failed to create builds: {e:?}");
+                let _ = chan
+                    .basic_nack(
+                        delivery.delivery_tag,
+                        lapin::options::BasicNackOptions {
+                            requeue: true,
+                            ..Default::default()
+                        },
+                    )
+                    .await;
+                continue;
+            }
+        }
+
+        let _ = chan
+            .basic_ack(delivery.delivery_tag, BasicAckOptions::default())
+            .await;
+        tracing::info!("Finished processing job for PR #{}", job.pr.number);
+    }
+
+    Ok(())
+}
+
+#[tokio::main]
+async fn main() -> anyhow::Result<()> {
+    hydra_tracing::init()?;
+    nix_utils::init_nix();
+
+    let cli = Arc::new(config::Cli::new());
+    let hostname = cli.get_hostname();
+
+    tracing::info!(
+        "ofborg-evaluator starting, hostname={hostname}, endpoint={}",
+        cli.gateway_endpoint
+    );
+
+    if cli.drv.is_empty() {
+        // AMQP consumer mode: read from hydra-eval-jobs queue
+        tracing::info!("running in AMQP consumer mode (no --drv provided)");
+        run_consumer_mode(cli).await
+    } else {
+        // CLI mode: process drv paths from command line
+        tracing::info!("running in CLI mode with {} drv path(s)", cli.drv.len());
+        run_cli_mode(cli).await
     }
 }

@@ -3,7 +3,8 @@ use crate::acl::Acl;
 use crate::checkout;
 use crate::commitstatus::{CommitStatus, CommitStatusError};
 use crate::config::GithubAppVendingMachine;
-use crate::message::{buildjob, evaluationjob};
+use crate::message::{buildjob, evaluationjob, hydra_eval_job};
+use crate::nix;
 use crate::stats::{self, Event};
 use crate::systems;
 use crate::tasks::eval;
@@ -16,6 +17,7 @@ use std::path::Path;
 use std::time::Instant;
 
 use tracing::{debug_span, error, info, warn};
+use uuid::Uuid;
 
 pub struct EvaluationWorker<E> {
     cloner: checkout::CachedCloner,
@@ -23,15 +25,22 @@ pub struct EvaluationWorker<E> {
     acl: Acl,
     identity: String,
     events: E,
+    hydra_eval_queue: Option<String>,
+    hydra_eval_nix: Option<nix::Nix>,
+    hydra_eval_jobset_id: Option<i32>,
 }
 
 impl<E: stats::SysEvents> EvaluationWorker<E> {
+    #[allow(clippy::too_many_arguments)]
     pub fn new(
         cloner: checkout::CachedCloner,
         github_vend: Option<GithubAppVendingMachine>,
         acl: Acl,
         identity: String,
         events: E,
+        hydra_eval_queue: Option<String>,
+        hydra_eval_nix: Option<nix::Nix>,
+        hydra_eval_jobset_id: Option<i32>,
     ) -> EvaluationWorker<E> {
         EvaluationWorker {
             cloner,
@@ -39,6 +48,9 @@ impl<E: stats::SysEvents> EvaluationWorker<E> {
             acl,
             identity,
             events,
+            hydra_eval_queue,
+            hydra_eval_nix,
+            hydra_eval_jobset_id,
         }
     }
 }
@@ -94,6 +106,9 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
             &self.identity,
             &self.cloner,
             job,
+            self.hydra_eval_queue.clone(),
+            self.hydra_eval_nix.clone(),
+            self.hydra_eval_jobset_id,
         )
         .worker_actions()
         .await
@@ -109,10 +124,14 @@ struct OneEval<'a, E> {
     identity: &'a str,
     cloner: &'a checkout::CachedCloner,
     job: &'a evaluationjob::EvaluationJob,
+    hydra_eval_queue: Option<String>,
+    hydra_eval_nix: Option<nix::Nix>,
+    hydra_eval_jobset_id: Option<i32>,
 }
 
 impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
     #[allow(clippy::too_many_arguments)]
+    #[allow(clippy::borrow_as_ptr)]
     fn new(
         client_app: Option<hubcaps::Github>,
         acl: &'a Acl,
@@ -120,6 +139,9 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         identity: &'a str,
         cloner: &'a checkout::CachedCloner,
         job: &'a evaluationjob::EvaluationJob,
+        hydra_eval_queue: Option<String>,
+        hydra_eval_nix: Option<nix::Nix>,
+        hydra_eval_jobset_id: Option<i32>,
     ) -> OneEval<'a, E> {
         let (client_app, repo, enable_publish) = if let Some(client_app) = client_app {
             let repo = client_app.repo(job.repo.owner.clone(), job.repo.name.clone());
@@ -138,6 +160,9 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             identity,
             cloner,
             job,
+            hydra_eval_queue,
+            hydra_eval_nix,
+            hydra_eval_jobset_id,
         }
     }
 
@@ -470,7 +495,40 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                 .all_evaluations_passed(&mut overall_status)
                 .await?;
 
-            response.extend(schedule_builds(complete.builds, auto_schedule_build_archs));
+            response.extend(schedule_builds(
+                complete.builds.clone(),
+                auto_schedule_build_archs,
+            ));
+
+            if let (Some(ref queue), Some(ref nix), Some(jobset_id)) = (
+                self.hydra_eval_queue.clone(),
+                self.hydra_eval_nix.clone(),
+                self.hydra_eval_jobset_id,
+            ) {
+                let drv_paths = resolve_attrs_to_drv_paths(
+                    nix,
+                    std::path::Path::new(&refpath),
+                    &complete.builds,
+                );
+                if !drv_paths.is_empty() {
+                    info!(
+                        "Publishing {} drv paths to hydra-eval-jobs for PR #{}",
+                        drv_paths.len(),
+                        job.pr.number
+                    );
+                    response.push(worker::publish_serde_action(
+                        None,
+                        Some(queue.clone()),
+                        &hydra_eval_job::HydraEvalJob {
+                            repo: job.repo.clone(),
+                            pr: job.pr.clone(),
+                            drv_paths,
+                            request_id: Uuid::new_v4().to_string(),
+                            jobset_id,
+                        },
+                    ));
+                }
+            }
 
             overall_status
                 .set_with_description("^.^!", hubcaps::statuses::State::Success)
@@ -518,6 +576,47 @@ fn schedule_builds(
     }
 
     response
+}
+
+fn resolve_attrs_to_drv_paths(
+    nix: &nix::Nix,
+    nixpkgs: &std::path::Path,
+    builds: &[buildjob::BuildJob],
+) -> Vec<String> {
+    let mut all_attrs: Vec<String> = builds.iter().flat_map(|b| b.attrs.clone()).collect();
+    all_attrs.sort();
+    all_attrs.dedup();
+
+    if all_attrs.is_empty() {
+        return vec![];
+    }
+
+    let file = builds
+        .first()
+        .and_then(|b| b.subset.clone())
+        .map(|s| match s {
+            crate::commentparser::Subset::NixOS => nix::File::ReleaseNixOS,
+            crate::commentparser::Subset::Nixpkgs => nix::File::DefaultNixpkgs,
+        })
+        .unwrap_or(nix::File::DefaultNixpkgs);
+
+    match nix.safely_instantiate_attrs(nixpkgs, file, all_attrs) {
+        Ok(f) => {
+            use std::io::{BufRead, BufReader};
+            BufReader::new(f)
+                .lines()
+                .map_while(Result::ok)
+                .filter(|line| line.trim().ends_with(".drv"))
+                .map(|line| line.trim().to_owned())
+                .collect()
+        }
+        Err(f) => {
+            use std::io::{BufRead, BufReader};
+            let stderr: Vec<String> = BufReader::new(f).lines().map_while(Result::ok).collect();
+            warn!("nix-instantiate failed for attrs: {:?}", stderr.join("\n"));
+            vec![]
+        }
+    }
 }
 
 pub async fn update_labels(

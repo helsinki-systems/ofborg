@@ -48,9 +48,36 @@ pub struct Cli {
     #[clap(short, long)]
     pub jobset_id: i32,
 
-    /// Drv store paths to schedule as builds (can be repeated)
-    #[clap(short, long, required = true)]
+    /// Drv store paths to schedule as builds (can be repeated).
+    /// When provided, runs in CLI mode. When omitted, runs as an
+    /// AMQP consumer reading from hydra-eval-jobs queue.
+    #[clap(short, long)]
     pub drv: Vec<String>,
+
+    // --- AMQP consumer mode (used when --drv is not provided) ---
+    /// `RabbitMQ` host (required in AMQP consumer mode)
+    #[clap(long)]
+    pub rabbitmq_host: Option<String>,
+
+    /// `RabbitMQ` port
+    #[clap(long, default_value_t = 5672)]
+    pub rabbitmq_port: u16,
+
+    /// `RabbitMQ` username
+    #[clap(long)]
+    pub rabbitmq_username: Option<String>,
+
+    /// File containing the `RabbitMQ` password
+    #[clap(long)]
+    pub rabbitmq_password_file: Option<std::path::PathBuf>,
+
+    /// `RabbitMQ` virtual host
+    #[clap(long, default_value = "/")]
+    pub rabbitmq_vhost: String,
+
+    /// Whether to use SSL for `RabbitMQ`
+    #[clap(long)]
+    pub rabbitmq_ssl: bool,
 }
 
 impl Cli {
