@@ -36,61 +36,15 @@ pub struct Cli {
     #[clap(long)]
     pub domain_name: Option<String>,
 
-    /// Hostname to identify this evaluator
-    #[clap(short, long)]
-    pub hostname: Option<String>,
-
-    /// Ping interval in seconds
-    #[clap(short, long, default_value_t = 30)]
-    pub ping_interval: u64,
-
-    /// Jobset ID to inject builds into
-    #[clap(short, long)]
-    pub jobset_id: i32,
-
-    /// Drv store paths to schedule as builds (can be repeated).
-    /// When provided, runs in CLI mode. When omitted, runs as an
-    /// AMQP consumer reading from hydra-eval-jobs queue.
-    #[clap(short, long)]
-    pub drv: Vec<String>,
-
-    // --- AMQP consumer mode (used when --drv is not provided) ---
-    /// `RabbitMQ` host (required in AMQP consumer mode)
-    #[clap(long)]
-    pub rabbitmq_host: Option<String>,
-
-    /// `RabbitMQ` port
-    #[clap(long, default_value_t = 5672)]
-    pub rabbitmq_port: u16,
-
-    /// `RabbitMQ` username
-    #[clap(long)]
-    pub rabbitmq_username: Option<String>,
-
-    /// File containing the `RabbitMQ` password
-    #[clap(long)]
-    pub rabbitmq_password_file: Option<std::path::PathBuf>,
-
-    /// `RabbitMQ` virtual host
-    #[clap(long, default_value = "/")]
-    pub rabbitmq_vhost: String,
-
-    /// Whether to use SSL for `RabbitMQ`
-    #[clap(long)]
-    pub rabbitmq_ssl: bool,
+    /// Config file path
+    #[clap()]
+    pub config_path: std::path::PathBuf,
 }
 
 impl Cli {
     #[must_use]
     pub fn new() -> Self {
         Self::parse()
-    }
-
-    #[must_use]
-    pub fn get_hostname(&self) -> String {
-        self.hostname
-            .clone()
-            .unwrap_or_else(|| gethostname::gethostname().to_string_lossy().into_owned())
     }
 
     pub async fn get_authorization_token(&self) -> anyhow::Result<Option<String>> {

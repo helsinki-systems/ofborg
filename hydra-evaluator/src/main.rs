@@ -21,7 +21,6 @@ use std::sync::Arc;
 use anyhow::Context as _;
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, QueueDeclareOptions};
 use lapin::types::FieldTable;
-use lapin::{Connection, ConnectionProperties};
 use nix_utils::BaseStore as _;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
@@ -117,68 +116,25 @@ async fn create_builds(
     Ok(response.into_inner().build_ids)
 }
 
-async fn run_cli_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
-    let drv_paths: Vec<nix_utils::StorePath> = cli
-        .drv
-        .iter()
-        .map(|s| nix_utils::StorePath::new(s))
-        .collect();
-
-    tracing::info!("connecting to queue-runner");
-    let mut client = grpc::init_client(&cli).await?;
-
-    // Import drv files into the queue-runner's store via BuildResult
-    tracing::info!("importing {} drv(s) via BuildResult", drv_paths.len());
-    import_drvs(&mut client, &drv_paths).await?;
-
-    // Create build records for the imported drvs
-    tracing::info!(
-        "creating builds via CreateBuild (jobset_id={})",
-        cli.jobset_id
-    );
-    let build_ids = create_builds(&mut client, cli.jobset_id, &drv_paths).await?;
-
-    println!("Created {} build(s):", build_ids.len());
-    for (drv_path, build_id) in &build_ids {
-        println!("  {build_id} <- {drv_path}");
-    }
-
-    tracing::info!("ofborg-evaluator done, tunnel continues in background");
-
-    // Keep the process alive so the tunnel stays connected
-    loop {
-        tokio::time::sleep(std::time::Duration::from_secs(3600)).await;
-    }
-}
-
+#[tokio::main]
 #[allow(clippy::too_many_lines)]
-async fn run_consumer_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
-    let rabbit_host = cli
-        .rabbitmq_host
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-host is required in consumer mode"))?;
-    let rabbit_username = cli
-        .rabbitmq_username
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-username is required in consumer mode"))?;
-    let rabbit_password_file = cli
-        .rabbitmq_password_file
-        .clone()
-        .ok_or_else(|| anyhow::anyhow!("--rabbitmq-password-file is required in consumer mode"))?;
+async fn main() -> anyhow::Result<()> {
+    hydra_tracing::init()?;
+    nix_utils::init_nix();
 
-    let password = fs_err::tokio::read_to_string(&rabbit_password_file)
-        .await?
-        .trim()
-        .to_owned();
+    let cli = Arc::new(config::Cli::new());
+    let Some(cfg) = ofborg::config::load(&cli.config_path).hydra_evaluator else {
+        tracing::error!("No ofborg/hydra evaluator configuration found!");
+        panic!();
+    };
 
-    let scheme = if cli.rabbitmq_ssl { "amqps" } else { "amqp" };
-    let uri = format!(
-        "{}://{}:{}@{}:{}/{}",
-        scheme, rabbit_username, password, rabbit_host, cli.rabbitmq_port, cli.rabbitmq_vhost
+    tracing::info!(
+        "ofborg-evaluator starting endpoint={}",
+        cli.gateway_endpoint
     );
 
-    tracing::info!("connecting to RabbitMQ at {rabbit_host}");
-    let conn = Connection::connect(&uri, ConnectionProperties::default()).await?;
+    tracing::info!("running in AMQP consumer mode");
+    let conn = ofborg::easylapin::from_config(&cfg.rabbitmq).await?;
     let chan = conn.create_channel().await?;
 
     // Declare the hydra-eval-jobs queue (must match what mass-rebuilder publishes to)
@@ -202,7 +158,7 @@ async fn run_consumer_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
     let mut consumer = chan
         .basic_consume(
             "hydra-eval-jobs".into(),
-            format!("{}-hydra-evaluator", cli.get_hostname()).into(),
+            "ofborg-hydra-evaluator".into(),
             BasicConsumeOptions::default(),
             FieldTable::default(),
         )
@@ -296,29 +252,7 @@ async fn run_consumer_mode(cli: Arc<config::Cli>) -> anyhow::Result<()> {
         tracing::info!("Finished processing job for PR #{}", job.pr.number);
     }
 
+    drop(conn); // Close connection.
+    tracing::info!("Closed the session... EOF");
     Ok(())
-}
-
-#[tokio::main]
-async fn main() -> anyhow::Result<()> {
-    hydra_tracing::init()?;
-    nix_utils::init_nix();
-
-    let cli = Arc::new(config::Cli::new());
-    let hostname = cli.get_hostname();
-
-    tracing::info!(
-        "ofborg-evaluator starting, hostname={hostname}, endpoint={}",
-        cli.gateway_endpoint
-    );
-
-    if cli.drv.is_empty() {
-        // AMQP consumer mode: read from hydra-eval-jobs queue
-        tracing::info!("running in AMQP consumer mode (no --drv provided)");
-        run_consumer_mode(cli).await
-    } else {
-        // CLI mode: process drv paths from command line
-        tracing::info!("running in CLI mode with {} drv path(s)", cli.drv.len());
-        run_cli_mode(cli).await
-    }
 }
