@@ -1,12 +1,10 @@
 /// This is what evaluates every pull-request
-use crate::acl::Acl;
 use crate::checkout;
 use crate::commitstatus::{CommitStatus, CommitStatusError};
 use crate::config::GithubAppVendingMachine;
 use crate::message::{buildjob, evaluationjob, hydra_eval_job};
 use crate::nix;
 use crate::stats::{self, Event};
-use crate::systems;
 use crate::tasks::eval;
 use crate::tasks::eval::EvaluationStrategy;
 use crate::worker;
@@ -23,7 +21,6 @@ use uuid::Uuid;
 pub struct EvaluationWorker<E> {
     cloner: checkout::CachedCloner,
     github_vend: Option<tokio::sync::RwLock<GithubAppVendingMachine>>,
-    acl: Acl,
     identity: String,
     events: E,
     hydra_eval_queue: Option<String>,
@@ -36,7 +33,6 @@ impl<E: stats::SysEvents> EvaluationWorker<E> {
     pub fn new(
         cloner: checkout::CachedCloner,
         github_vend: Option<GithubAppVendingMachine>,
-        acl: Acl,
         identity: String,
         events: E,
         hydra_eval_queue: Option<String>,
@@ -46,7 +42,6 @@ impl<E: stats::SysEvents> EvaluationWorker<E> {
         EvaluationWorker {
             cloner,
             github_vend: github_vend.map(tokio::sync::RwLock::new),
-            acl,
             identity,
             events,
             hydra_eval_queue,
@@ -102,7 +97,6 @@ impl<E: stats::SysEvents + 'static> worker::SimpleWorker for EvaluationWorker<E>
 
         OneEval::new(
             github_client,
-            &self.acl,
             &mut self.events,
             &self.identity,
             &self.cloner,
@@ -120,7 +114,6 @@ struct OneEval<'a, E> {
     client_app: hubcaps::Github,
     repo: hubcaps::repositories::Repository,
     enable_publish: bool,
-    acl: &'a Acl,
     events: &'a mut E,
     identity: &'a str,
     cloner: &'a checkout::CachedCloner,
@@ -135,7 +128,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
     #[allow(clippy::borrow_as_ptr)]
     fn new(
         client_app: Option<hubcaps::Github>,
-        acl: &'a Acl,
         events: &'a mut E,
         identity: &'a str,
         cloner: &'a checkout::CachedCloner,
@@ -156,7 +148,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             client_app,
             repo,
             enable_publish,
-            acl,
             events,
             identity,
             cloner,
@@ -287,7 +278,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
             .client_app
             .repo(self.job.repo.owner.clone(), self.job.repo.name.clone());
         let issue_ref = repo.issue(job.pr.number);
-        let auto_schedule_build_archs: Vec<systems::System>;
 
         match issue_ref.get().await {
             Ok(iss) => {
@@ -295,15 +285,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                     self.events.notify(Event::IssueAlreadyClosed).await;
                     info!("Skipping {} because it is closed", job.pr.number);
                     return Ok(self.actions().skip(job));
-                }
-
-                if issue_is_wip(&iss) {
-                    auto_schedule_build_archs = vec![];
-                } else {
-                    auto_schedule_build_archs = self.acl.build_job_architectures_for_user_repo(
-                        &iss.user.login,
-                        &job.repo.full_name,
-                    );
                 }
             }
 
@@ -496,11 +477,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
                 .all_evaluations_passed(&mut overall_status)
                 .await?;
 
-            response.extend(schedule_builds(
-                complete.builds.clone(),
-                auto_schedule_build_archs,
-            ));
-
             if let (Some(ref queue), Some(ref nix), Some(jobset_id)) = (
                 self.hydra_eval_queue.clone(),
                 self.hydra_eval_nix.clone(),
@@ -545,38 +521,6 @@ impl<'a, E: stats::SysEvents + 'static> OneEval<'a, E> {
         info!("Evaluations done!");
         Ok(self.actions().done(job, response))
     }
-}
-
-fn schedule_builds(
-    builds: Vec<buildjob::BuildJob>,
-    auto_schedule_build_archs: Vec<systems::System>,
-) -> Vec<worker::Action> {
-    let mut response = vec![];
-    info!(
-        "Scheduling build jobs {:?} on arches {:?}",
-        builds, auto_schedule_build_archs
-    );
-    for buildjob in builds {
-        for arch in auto_schedule_build_archs.iter() {
-            let (exchange, routingkey) = arch.as_build_destination();
-            response.push(worker::publish_serde_action(
-                exchange, routingkey, &buildjob,
-            ));
-        }
-        response.push(worker::publish_serde_action(
-            Some("build-results".to_string()),
-            None,
-            &buildjob::QueuedBuildJobs {
-                job: buildjob,
-                architectures: auto_schedule_build_archs
-                    .iter()
-                    .map(|arch| arch.to_string())
-                    .collect(),
-            },
-        ));
-    }
-
-    response
 }
 
 fn resolve_attrs_to_drv_paths(
@@ -657,10 +601,6 @@ pub async fn update_labels(
             panic!("Failed to remove label {label:?} from issue #{issue}: {err:?}")
         });
     }
-}
-
-fn issue_is_wip(issue: &hubcaps::issues::Issue) -> bool {
-    issue.title.starts_with("WIP:") || issue.title.contains("[WIP]")
 }
 
 /// Determine whether or not to use the "old" status prefix, `grahamcofborg`, or
