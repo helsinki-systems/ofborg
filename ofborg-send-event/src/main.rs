@@ -19,8 +19,8 @@ struct Args {
     webhook_receiver_url: String,
 
     /// PR that should be fetched
-    #[arg()]
-    pr_nr: String,
+    #[arg(long)]
+    pr_nr: u64,
 
     /// Webhook event name, e.g. push, pull_request, ping
     #[arg(long, default_value = "pull_request")]
@@ -92,7 +92,7 @@ async fn main() -> Result<()> {
     ofborg::setup_log();
     let args = Args::parse();
 
-    let event = make_pull_request_body(&args.full_repo_name, 512329).await?;
+    let event = make_pull_request_body(&args.full_repo_name, args.pr_nr).await?;
     let body = serde_json::to_vec(&event)?;
 
     let delivery_id = args
