@@ -41,6 +41,15 @@ cat <<EOF > .ofborg-data/local.json
             "virtualhost": "ofborg"
         }
     },
+    "github_comment_filter": {
+        "rabbitmq": {
+            "host": "localhost:5672",
+            "ssl": false,
+            "username": "ofborg",
+            "password_file": "${DATA_DIR}/.amqp-password",
+            "virtualhost": "ofborg"
+        }
+    },
     "stats": {
         "listen": "[::1]:9898",
         "rabbitmq": {
