@@ -36,8 +36,9 @@ gethostname = "1"
 url = "2.5.4"
 toml = "1.0.0"
 
-nix-utils = { path = "../../queue-runner-v2/crates/nix-utils" } # TODO
-hydra-tracing = { git = "https://github.com/nixos/hydra" } # TODO
+harmonia-store-core = { git = "https://github.com/nix-community/harmonia.git" }
+nix-utils = { git = "https://github.com/nixos/hydra", rev = "ac5f1a636d90725f2dbd7883b0b7b8604ee2f076" }
+hydra-tracing = { git = "https://github.com/nixos/hydra", rev ="ac5f1a636d90725f2dbd7883b0b7b8604ee2f076" }
 ofborg = { path = "../ofborg" }
 
 [build-dependencies]

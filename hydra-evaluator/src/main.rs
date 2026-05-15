@@ -19,9 +19,11 @@ use std::collections::HashMap;
 use std::sync::Arc;
 
 use anyhow::Context as _;
+use harmonia_store_core::store_path::{FromStoreDirStr, StorePath};
 use lapin::options::{BasicAckOptions, BasicConsumeOptions, QueueDeclareOptions};
 use lapin::types::FieldTable;
 use nix_utils::BaseStore as _;
+use std::io::Write;
 use tokio::sync::mpsc;
 use tokio_stream::StreamExt as _;
 use tonic::Request;
@@ -68,21 +70,16 @@ fn compression_encode_channel() -> (
 }
 
 #[tracing::instrument(skip(client, drv_paths), err)]
-async fn import_drvs(
-    client: &mut OfborgClient,
-    drv_paths: &[nix_utils::StorePath],
-) -> anyhow::Result<()> {
+async fn import_drvs(client: &mut OfborgClient, drv_paths: &[StorePath]) -> anyhow::Result<()> {
     let (raw_writer, rx) = compression_encode_channel();
 
     let paths = drv_paths.to_owned();
     tokio::task::spawn_blocking(move || {
         let store = nix_utils::LocalStore::init();
         let mut sync_writer = tokio_util::io::SyncIoBridge::new(raw_writer);
-        let closure = move |data: &[u8]| {
-            use std::io::Write;
-            sync_writer.write_all(data).is_ok()
-        };
-        let _ = store.export_paths(&paths, closure);
+        for path in &paths {
+            let _ = store.nar_from_path(path, |data: &[u8]| sync_writer.write_all(data).is_ok());
+        }
     });
 
     let stream = tokio_stream::wrappers::UnboundedReceiverStream::new(rx).filter_map(Result::ok);
@@ -98,7 +95,7 @@ async fn import_drvs(
 async fn create_builds(
     client: &mut OfborgClient,
     jobset_id: i32,
-    drv_paths: &[nix_utils::StorePath],
+    drv_paths: &[StorePath],
 ) -> anyhow::Result<HashMap<String, i32>> {
     let drv_strs: Vec<String> = drv_paths
         .iter()
@@ -198,10 +195,14 @@ async fn main() -> anyhow::Result<()> {
             continue;
         }
 
-        let drv_paths: Vec<nix_utils::StorePath> = job
+        let store_dir = nix_utils::LocalStore::init().store_dir().clone();
+        let drv_paths: Vec<StorePath> = job
             .drv_paths
             .iter()
-            .map(|s| nix_utils::StorePath::new(s))
+            .map(|s| {
+                StorePath::from_store_dir_str(&store_dir, s)
+                    .unwrap_or_else(|e| panic!("Invalid store path '{s}': {e}"))
+            })
             .collect();
 
         match import_drvs(&mut client, &drv_paths).await {
