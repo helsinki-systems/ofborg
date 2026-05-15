@@ -54,7 +54,6 @@ cat <<EOF > .ofborg-data/local.json
     "runner": {
         "identity": "...",
         "repos": [
-          "nixos/nixpkgs",
           "ofborg/testpkgs"
         ],
         "disable_trusted_users": true
